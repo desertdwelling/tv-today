@@ -52,6 +52,7 @@ section.collapsed .grid{display:none}
 .chip.prem{background:#3a3420;color:#ffd98a;font-weight:600}
 .chip.match{background:#3b2340;color:#f3b6ff;font-weight:600}
 .chip.lib{background:#40301a;color:#ffc979}
+.chip.kids{background:#1d3a3f;color:#8fe3ef}
 .chip.time{background:transparent;border:1px solid var(--line)}
 .links{margin-top:6px;font-size:12.5px;display:flex;gap:10px;flex-wrap:wrap}
 .summary{display:none;margin-top:6px;font-size:13px;color:#c3c8d2}
@@ -142,6 +143,9 @@ const STRONG_MATCH = 7, MAYBE_MATCH = 4;
 
 // ---------- Filter heuristics ----------
 const KIDS_NETWORKS = /^(Nickelodeon|Nick Jr\.?|Nicktoons|Disney Channel|Disney Junior|Disney XD|PBS Kids|CBBC|CBeebies|Universal Kids|Cartoonito|Boomerang|Baby ?TV|Discovery Family|Milkshake!?|CITV|Tiny Pop|Pop)$/i;
+const PRESCHOOL_NETWORKS = /^(Nick Jr\.?|Disney Junior|Disney Jr\.?|CBeebies|PBS Kids|Baby ?TV|Milkshake!?|Cartoonito|Tiny Pop|Noggin|Sprout)$/i;
+const KIDS_OK_TV = ["Action","Adventure","Science-Fiction","Fantasy","Supernatural"];
+const KIDS_OK_ANIME = ["Action","Adventure","Sci-Fi","Fantasy"];
 const DATING_WORDS = /(love island|hunt for love|bachelor|bachelorette|love is blind|married at first sight|90 day|too hot to handle|temptation island|perfect match|are you the one|ex on the beach|fboy island|first dates|naked attraction|farmer wants a wife|dating|love triangle|love after lockup|my mom, your dad|the ultimatum|single'?s inferno|marriage pact|match ?made|love ?u?nder|later dating|i kissed a boy|i kissed a girl|love on the spectrum)/i;
 const KNOWN_SOAPS = /^(general hospital|days of our lives|the young and the restless|the bold and the beautiful|beyond the gates|eastenders|coronation street|emmerdale|hollyoaks|doctors|neighbours|home and away|river city|pobol y cwm|fair city|shortland street)$/i;
 const MAJOR_STREAMERS = /^(Netflix|Prime Video|Amazon Prime Video|Disney\+|HBO Max|Max|Apple TV\+?|Hulu|Peacock|Paramount\+|Crunchyroll|HIDIVE|Shudder|AMC\+|BritBox|Acorn TV|BBC iPlayer|ITVX|Channel 4|Tubi|The Roku Channel|Adult Swim|Dropout|MGM\+|Starz|Showtime|Freevee)$/i;
@@ -153,7 +157,7 @@ const DEFAULTS = {
   hidden:{},       // key -> {title, at}
   watching:{},     // key -> title   (manually starred)
   unwatch:{},      // key -> title   (seed matches you turned off)
-  filters:{kids:true,dating:true,talk:true,soap:true,sports:true,news:true,otherUK:true,foreignWeb:true},
+  filters:{kids:true,dating:true,talk:true,soap:true,sports:true,news:true,foreignWeb:true},
   collapsed:{}
 };
 let S = load();
@@ -319,13 +323,15 @@ function classifyTV(g){
   const days = (g.show.schedule && g.show.schedule.days) || [];
   if(t === "News") return "news";
   if(t === "Sports" || gen.includes("Sports")) return "sports";
-  if(gen.includes("Children") || KIDS_NETWORKS.test(ch)) return "kids";
+  if(PRESCHOOL_NETWORKS.test(ch)) return "kids";
+  if(gen.includes("Children") || KIDS_NETWORKS.test(ch)){
+    if(gen.some(x => KIDS_OK_TV.includes(x))) g.kidsLabel = true;  // action/adventure/sci-fi/fantasy kids' shows get through
+    else return "kids";
+  }
   if(t === "Talk Show" && g.airtime && g.airtime < "17:00") return "talk";
   if(t === "Reality" && (gen.includes("Romance") || DATING_WORDS.test(name))) return "dating";
   if(KNOWN_SOAPS.test(name) || (t === "Scripted" && days.length >= 5 && (gen.includes("Drama") || gen.includes("Romance") || gen.length===0))) return "soap";
-  if(g.region === "UK" && !UK_MAIN.test(ch)) return "otherUK";
   if(g.region === "Streaming" && g.chCountry && !["US","GB"].includes(g.chCountry)) return "foreignWeb";
-  if(g.region === "Streaming" && g.chCountry === "GB" && !UK_MAIN.test(ch)) return "otherUK";
   if(g.region === "Streaming" && !g.chCountry && g.language && g.language !== "English" && !MAJOR_STREAMERS.test(ch)) return "foreignWeb";
   return "";
 }
@@ -351,7 +357,10 @@ function buildAnime(rows){
            titles:[m.title.english, m.title.romaji, ...(m.synonyms||[])], eps:[], image: safeUrl(m.coverImage && m.coverImage.medium),
            link: safeUrl(m.siteUrl), streams: uniq, genres: m.genres||[], tags, score, country: m.countryOfOrigin, format: m.format,
            totalEps: m.episodes, summary: strip(m.description)};
-      g.category = (m.genres||[]).includes("Sports") ? "sports" : ((m.tags||[]).some(t => t.name==="Kids" && t.rank>=50) ? "kids" : "");
+      const kidsTag = (m.tags||[]).some(t => t.name==="Kids" && t.rank>=50);
+      const kidsOk = kidsTag && (m.genres||[]).some(x => KIDS_OK_ANIME.includes(x));
+      g.kidsLabel = kidsOk;
+      g.category = (m.genres||[]).includes("Sports") ? "sports" : (kidsTag && !kidsOk ? "kids" : "");
       groups.set(key, g);
     }
     g.eps.push(r);
@@ -379,7 +388,7 @@ const filteredOut = g => g.category && S.filters[g.category] && !isWatching(g);
 
 // ---------- Render ----------
 const FILTER_LABELS = {kids:"Kids shows", dating:"Reality dating", talk:"Daytime talk", soap:"Soap operas", sports:"Sports",
-  news:"News", otherUK:"Other UK channels", foreignWeb:"Non-US/UK streaming"};
+  news:"News", foreignWeb:"Non-US/UK streaming"};
 
 function sections(){
   const q = norm($("#q").value).trim();
@@ -408,6 +417,7 @@ function card(g){
   if(g.isSeasonPremiere) chips.push(`<span class="chip prem">SEASON PREMIERE</span>`);
   if(g.kind==="anime" && g.score >= STRONG_MATCH) chips.push(`<span class="chip match">Great match</span>`);
   else if(g.kind==="anime" && g.score >= MAYBE_MATCH) chips.push(`<span class="chip match">Possible match</span>`);
+  if(g.kidsLabel) chips.push(`<span class="chip kids">Kids</span>`);
   if(isSeeded(g)) chips.push(`<span class="chip lib">In your library / likes</span>`);
   if(g.channel) chips.push(`<span class="chip net">${esc(g.channel)}</span>`);
   if(g.kind==="tv"){
@@ -493,13 +503,12 @@ function openSettings(){
    <h3>Hide these kinds of shows</h3>
    ${Object.entries(FILTER_LABELS).map(([k,l]) => `<label class="opt"><input type="checkbox" data-filter="${k}" ${f[k]?"checked":""}>
      <span>${l}<small>${{
-       kids:"Children's genre, kids' channels (Nick, Disney Jr, CBeebies…), anime tagged Kids",
+       kids:"Preschool channels (Nick Jr., Disney Junior, CBeebies, PBS Kids…) and kids' shows that aren't action, adventure, sci-fi or fantasy. Kids' action/adventure shows still appear, with a Kids label",
        dating:"Reality shows about dating/romance. Game shows (Blind Date, The Dating Game) still show",
        talk:"Talk shows airing before 5pm. Late-night talk still shows",
        soap:"Daily scripted dramas (General Hospital, EastEnders, Emmerdale…)",
        sports:"Live sports and sports shows; sports anime",
        news:"News programs",
-       otherUK:"UK channels besides BBC One/Two/Three, iPlayer, ITV1/ITVX, Channel 4",
        foreignWeb:"Streaming services based outside the US/UK (Tencent, Youku, Okko…) and non-English shows on YouTube and similar. Non-English shows on Netflix, Prime, Disney+, etc. still show"}[k]}</small></span></label>`).join("")}
    <div class="sub" style="margin-top:6px">Shows you follow (★) always appear, even if a filter would hide them.</div>
    <h3>Hidden shows (${hid.length})</h3>
