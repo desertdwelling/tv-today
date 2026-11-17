@@ -252,14 +252,16 @@ async function getJSON(url, opts){
   return r.json();
 }
 async function fetchTVmaze(dateStr){
-  const [us, gb, web] = await Promise.all([
+  const [us, ca, gb, web] = await Promise.all([
     getJSON(`https://api.tvmaze.com/schedule?country=US&date=${dateStr}`),
+    getJSON(`https://api.tvmaze.com/schedule?country=CA&date=${dateStr}`),
     getJSON(`https://api.tvmaze.com/schedule?country=GB&date=${dateStr}`),
     getJSON(`https://api.tvmaze.com/schedule/web?date=${dateStr}`)
   ]);
   const out = [];
   const add = (ep, show, region) => out.push({ep, show, region});
   us.forEach(e => add(e, e.show, "US"));
+  ca.forEach(e => { if(e.show && e.show.language === "English") add(e, e.show, "Canada"); });  // English-language Canadian channels only
   gb.forEach(e => add(e, e.show, "UK"));
   web.forEach(e => add(e, e._embedded && e._embedded.show, "Streaming"));
   return out.filter(x => x.show);
@@ -331,7 +333,8 @@ function classifyTV(g){
   if(t === "Talk Show" && g.airtime && g.airtime < "17:00") return "talk";
   if(t === "Reality" && (gen.includes("Romance") || DATING_WORDS.test(name))) return "dating";
   if(KNOWN_SOAPS.test(name) || (t === "Scripted" && days.length >= 5 && (gen.includes("Drama") || gen.includes("Romance") || gen.length===0))) return "soap";
-  if(g.region === "Streaming" && g.chCountry && !["US","GB"].includes(g.chCountry)) return "foreignWeb";
+  // English-language shows from any country's streamers always get through (Australia, NZ, Canada, Ireland…)
+  if(g.region === "Streaming" && g.chCountry && !["US","GB"].includes(g.chCountry) && g.language !== "English") return "foreignWeb";
   if(g.region === "Streaming" && !g.chCountry && g.language && g.language !== "English" && !MAJOR_STREAMERS.test(ch)) return "foreignWeb";
   return "";
 }
@@ -388,7 +391,7 @@ const filteredOut = g => g.category && S.filters[g.category] && !isWatching(g);
 
 // ---------- Render ----------
 const FILTER_LABELS = {kids:"Kids shows", dating:"Reality dating", talk:"Daytime talk", soap:"Soap operas", sports:"Sports",
-  news:"News", foreignWeb:"Non-US/UK streaming"};
+  news:"News", foreignWeb:"Non-English streaming"};
 
 function sections(){
   const q = norm($("#q").value).trim();
@@ -403,6 +406,7 @@ function sections(){
   out.push({id:"animePicks", title:"Anime picked for you", sub:"Ranked by how well genres and tags match what's in your library (isekai, dark fantasy, action, fantasy comedy).", list: take(g => g.kind==="anime" && g.score >= MAYBE_MATCH).sort((a,b)=> b.score-a.score || byTime(a,b))});
   out.push({id:"streaming", title:"Streaming", list: take(g => g.region==="Streaming").sort(byTime)});
   out.push({id:"us", title:"US TV", list: take(g => g.region==="US").sort(byTime)});
+  out.push({id:"ca", title:"Canada TV", list: take(g => g.region==="Canada").sort(byTime)});
   out.push({id:"uk", title:"UK TV", list: take(g => g.region==="UK").sort(byTime)});
   out.push({id:"anime", title:"Other anime airing today", list: take(g => g.kind==="anime").sort((a,b)=> b.score-a.score || byTime(a,b))});
   const hiddenCount = items.filter(isHidden).length;
@@ -509,7 +513,7 @@ function openSettings(){
        soap:"Daily scripted dramas (General Hospital, EastEnders, Emmerdale…)",
        sports:"Live sports and sports shows; sports anime",
        news:"News programs",
-       foreignWeb:"Streaming services based outside the US/UK (Tencent, Youku, Okko…) and non-English shows on YouTube and similar. Non-English shows on Netflix, Prime, Disney+, etc. still show"}[k]}</small></span></label>`).join("")}
+       foreignWeb:"Non-English shows on streaming services based outside the US/UK (Tencent, Youku, Okko…) and on YouTube and similar. English-language shows from anywhere (Australia, NZ, Canada…) and anything on Netflix, Prime, Disney+, etc. still show"}[k]}</small></span></label>`).join("")}
    <div class="sub" style="margin-top:6px">Shows you follow (★) always appear, even if a filter would hide them.</div>
    <h3>Hidden shows (${hid.length})</h3>
    <div class="list">${hid.length ? hid.map(([k,v]) => `<div><span>${esc(v.title)}</span><button data-unhide="${esc(k)}">Unhide</button></div>`).join("") : `<div class="empty">None yet — click ✕ on any show.</div>`}</div>
