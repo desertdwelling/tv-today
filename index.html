@@ -146,6 +146,7 @@ const KIDS_NETWORKS = /^(Nickelodeon|Nick Jr\.?|Nicktoons|Disney Channel|Disney 
 const PRESCHOOL_NETWORKS = /^(Nick Jr\.?|Disney Junior|Disney Jr\.?|CBeebies|PBS Kids|Baby ?TV|Milkshake!?|Cartoonito|Tiny Pop|Noggin|Sprout)$/i;
 const KIDS_OK_TV = ["Action","Adventure","Science-Fiction","Fantasy","Supernatural"];
 const KIDS_OK_ANIME = ["Action","Adventure","Sci-Fi","Fantasy"];
+const KJ_GENRES = ["Science-Fiction","Fantasy","Horror","Supernatural","Action"];  // add "Thriller" here to include thrillers
 const DATING_WORDS = /(love island|hunt for love|bachelor|bachelorette|love is blind|married at first sight|90 day|too hot to handle|temptation island|perfect match|are you the one|ex on the beach|fboy island|first dates|naked attraction|farmer wants a wife|dating|love triangle|love after lockup|my mom, your dad|the ultimatum|single'?s inferno|marriage pact|match ?made|love ?u?nder|later dating|i kissed a boy|i kissed a girl|love on the spectrum)/i;
 const KNOWN_SOAPS = /^(general hospital|days of our lives|the young and the restless|the bold and the beautiful|beyond the gates|eastenders|coronation street|emmerdale|hollyoaks|doctors|neighbours|home and away|river city|pobol y cwm|fair city|shortland street)$/i;
 const MAJOR_STREAMERS = /^(Netflix|Prime Video|Amazon Prime Video|Disney\+|HBO Max|Max|Apple TV\+?|Hulu|Peacock|Paramount\+|Crunchyroll|HIDIVE|Shudder|AMC\+|BritBox|Acorn TV|BBC iPlayer|ITVX|Channel 4|Tubi|The Roku Channel|Adult Swim|Dropout|MGM\+|Starz|Showtime|Freevee)$/i;
@@ -157,7 +158,7 @@ const DEFAULTS = {
   hidden:{},       // key -> {title, at}
   watching:{},     // key -> title   (manually starred)
   unwatch:{},      // key -> title   (seed matches you turned off)
-  filters:{kids:true,dating:true,talk:true,soap:true,sports:true,news:true,foreignWeb:true},
+  filters:{kids:true,dating:true,talk:true,soap:true,sports:true,news:true,foreignWeb:true,kjOther:true},
   collapsed:{}
 };
 let S = load();
@@ -252,11 +253,13 @@ async function getJSON(url, opts){
   return r.json();
 }
 async function fetchTVmaze(dateStr){
-  const [us, ca, gb, web] = await Promise.all([
+  const [us, ca, gb, web, kr, jp] = await Promise.all([
     getJSON(`https://api.tvmaze.com/schedule?country=US&date=${dateStr}`),
     getJSON(`https://api.tvmaze.com/schedule?country=CA&date=${dateStr}`),
     getJSON(`https://api.tvmaze.com/schedule?country=GB&date=${dateStr}`),
-    getJSON(`https://api.tvmaze.com/schedule/web?date=${dateStr}`)
+    getJSON(`https://api.tvmaze.com/schedule/web?date=${dateStr}`),
+    getJSON(`https://api.tvmaze.com/schedule?country=KR&date=${dateStr}`).catch(() => []),
+    getJSON(`https://api.tvmaze.com/schedule?country=JP&date=${dateStr}`).catch(() => [])
   ]);
   const out = [];
   const add = (ep, show, region) => out.push({ep, show, region});
@@ -264,6 +267,8 @@ async function fetchTVmaze(dateStr){
   ca.forEach(e => { if(e.show && e.show.language === "English") add(e, e.show, "Canada"); });  // English-language Canadian channels only
   gb.forEach(e => add(e, e.show, "UK"));
   web.forEach(e => add(e, e._embedded && e._embedded.show, "Streaming"));
+  kr.forEach(e => add(e, e.show, "KJ"));
+  jp.forEach(e => add(e, e.show, "KJ"));
   return out.filter(x => x.show);
 }
 
@@ -333,6 +338,14 @@ function classifyTV(g){
   if(t === "Talk Show" && g.airtime && g.airtime < "17:00") return "talk";
   if(t === "Reality" && (gen.includes("Romance") || DATING_WORDS.test(name))) return "dating";
   if(KNOWN_SOAPS.test(name) || (t === "Scripted" && days.length >= 5 && (gen.includes("Drama") || gen.includes("Romance") || gen.length===0))) return "soap";
+  // Korean & Japanese live action: only scripted shows in your genres that have an IMDb listing or are popular on TVmaze
+  const kj = g.language === "Korean" || g.language === "Japanese";
+  if(g.region === "KJ" || (kj && g.region === "Streaming")){
+    if(kj && g.region === "Streaming" && MAJOR_STREAMERS.test(ch)){ g.region = "KJ"; return ""; }  // Netflix, Disney+ etc. always show
+    if(t === "Animation" || gen.includes("Anime")) return "kjOther";                                // anime comes from AniList
+    if(t === "Scripted" && gen.some(x => KJ_GENRES.includes(x)) && ((g.show.externals && g.show.externals.imdb) || (g.show.weight||0) >= 80)){ g.region = "KJ"; return ""; }
+    return "kjOther";
+  }
   // English-language shows from any country's streamers always get through (Australia, NZ, Canada, Ireland…)
   if(g.region === "Streaming" && g.chCountry && !["US","GB"].includes(g.chCountry) && g.language !== "English") return "foreignWeb";
   if(g.region === "Streaming" && !g.chCountry && g.language && g.language !== "English" && !MAJOR_STREAMERS.test(ch)) return "foreignWeb";
@@ -391,7 +404,7 @@ const filteredOut = g => g.category && S.filters[g.category] && !isWatching(g);
 
 // ---------- Render ----------
 const FILTER_LABELS = {kids:"Kids shows", dating:"Reality dating", talk:"Daytime talk", soap:"Soap operas", sports:"Sports",
-  news:"News", foreignWeb:"Non-English streaming"};
+  news:"News", foreignWeb:"Non-English streaming", kjOther:"Other Korean & Japanese shows"};
 
 function sections(){
   const q = norm($("#q").value).trim();
@@ -408,6 +421,7 @@ function sections(){
   out.push({id:"us", title:"US TV", list: take(g => g.region==="US").sort(byTime)});
   out.push({id:"ca", title:"Canada TV", list: take(g => g.region==="Canada").sort(byTime)});
   out.push({id:"uk", title:"UK TV", list: take(g => g.region==="UK").sort(byTime)});
+  out.push({id:"kj", title:"Korea & Japan", sub:"Live-action sci-fi, fantasy, horror, supernatural and action shows, plus Korean and Japanese shows on Netflix, Disney+ and other major streamers.", list: take(g => g.region==="KJ").sort(byTime)});
   out.push({id:"anime", title:"Other anime airing today", list: take(g => g.kind==="anime").sort((a,b)=> b.score-a.score || byTime(a,b))});
   const hiddenCount = items.filter(isHidden).length;
   const filteredCount = items.filter(g => !isHidden(g) && filteredOut(g)).length;
@@ -440,6 +454,7 @@ function card(g){
     if(g.link) links.push(`<a href="${esc(g.link)}" target="_blank" rel="noopener">AniList</a>`);
   } else {
     if(g.site) links.push(`<a href="${esc(g.site)}" target="_blank" rel="noopener">Official site</a>`);
+    if(g.region === "KJ") links.push(`<a href="https://mydramalist.com/search?q=${encodeURIComponent(g.title)}" target="_blank" rel="noopener">MyDramaList</a>`);
     if(g.link) links.push(`<a href="${esc(g.link)}" target="_blank" rel="noopener">TVmaze</a>`);
   }
   if(g.summary) links.push(`<a href="#" data-act="more">Summary</a>`);
@@ -513,6 +528,7 @@ function openSettings(){
        soap:"Daily scripted dramas (General Hospital, EastEnders, Emmerdale…)",
        sports:"Live sports and sports shows; sports anime",
        news:"News programs",
+       kjOther:"Korean and Japanese shows outside your genres (sci-fi, fantasy, horror, supernatural, action), or obscure ones with no IMDb listing. Anime is always covered by the anime sections instead",
        foreignWeb:"Non-English shows on streaming services based outside the US/UK (Tencent, Youku, Okko…) and on YouTube and similar. English-language shows from anywhere (Australia, NZ, Canada…) and anything on Netflix, Prime, Disney+, etc. still show"}[k]}</small></span></label>`).join("")}
    <div class="sub" style="margin-top:6px">Shows you follow (★) always appear, even if a filter would hide them.</div>
    <h3>Hidden shows (${hid.length})</h3>
