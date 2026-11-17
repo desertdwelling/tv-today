@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0f1115">
+<title>TV Today</title>
+<style>
+:root{
+  --bg:#0f1115;--panel:#171a21;--panel2:#1e222b;--line:#2a2f3a;--text:#e8eaef;--muted:#9aa1ae;
+  --accent:#f5b544;--accent2:#5fb3ff;--good:#57d18a;--bad:#ff6b6b;--chip:#252a35;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+a{color:var(--accent2);text-decoration:none}a:hover{text-decoration:underline}
+header{position:sticky;top:0;z-index:5;background:rgba(15,17,21,.96);backdrop-filter:blur(6px);border-bottom:1px solid var(--line)}
+.bar{max-width:1200px;margin:0 auto;padding:12px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+h1{font-size:20px;margin:0 8px 0 0;letter-spacing:.3px}h1 span{color:var(--accent)}
+.datenav{display:flex;align-items:center;gap:6px}
+button{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font:inherit;font-size:13px;cursor:pointer}
+button:hover{border-color:#3c4352}
+button.primary{background:var(--accent);color:#1a1300;border-color:var(--accent);font-weight:600}
+#dateLabel{font-weight:600;min-width:170px;text-align:center}
+.spacer{flex:1}
+input[type=search]{background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:6px 10px;font:inherit;font-size:13px;width:200px}
+.tabs{max-width:1200px;margin:0 auto;padding:0 16px 10px;display:flex;gap:6px;flex-wrap:wrap}
+.tab{border-radius:999px;padding:4px 12px}
+.tab.on{background:var(--accent2);color:#04121f;border-color:var(--accent2);font-weight:600}
+.tab .n{opacity:.75;margin-left:4px;font-size:12px}
+main{max-width:1200px;margin:0 auto;padding:16px}
+section{margin:0 0 26px}
+section>h2{font-size:16px;margin:0 0 10px;display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none}
+section>h2 .count{color:var(--muted);font-weight:400;font-size:13px}
+section>h2 .caret{color:var(--muted);font-size:12px;width:12px}
+section.collapsed .grid{display:none}
+.sub{color:var(--muted);font-size:13px;margin:-6px 0 10px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:10px}
+.card{display:flex;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px;position:relative}
+.card.watch{border-color:#6b5420;background:linear-gradient(180deg,#1d1a12,var(--panel))}
+.poster{width:64px;height:92px;flex:none;border-radius:6px;background:var(--panel2) center/cover no-repeat}
+.body{flex:1;min-width:0}
+.title{font-weight:650;font-size:15px;line-height:1.25;margin-right:56px}
+.title a{color:var(--text)}
+.ep{color:var(--muted);font-size:13px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.meta{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.chip{background:var(--chip);border-radius:5px;padding:1px 6px;font-size:11.5px;color:#c9ced8;white-space:nowrap}
+.chip.net{background:#23324a;color:#bcd8ff}
+.chip.new{background:#1f3d2b;color:#8ff0b5;font-weight:600}
+.chip.prem{background:#3a3420;color:#ffd98a;font-weight:600}
+.chip.match{background:#3b2340;color:#f3b6ff;font-weight:600}
+.chip.lib{background:#40301a;color:#ffc979}
+.chip.time{background:transparent;border:1px solid var(--line)}
+.links{margin-top:6px;font-size:12.5px;display:flex;gap:10px;flex-wrap:wrap}
+.summary{display:none;margin-top:6px;font-size:13px;color:#c3c8d2}
+.card.open .summary{display:block}
+.acts{position:absolute;top:8px;right:8px;display:flex;gap:4px}
+.acts button{padding:2px 7px;font-size:14px;line-height:1.2;background:transparent}
+.acts .star.on{color:var(--accent);border-color:#6b5420}
+.acts .hide:hover{color:var(--bad);border-color:var(--bad)}
+.status{color:var(--muted);padding:30px 0;text-align:center}
+.err{color:var(--bad)}
+#drawer{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;z-index:20}
+#drawer.on{display:block}
+#drawer .panel{position:absolute;right:0;top:0;bottom:0;width:min(440px,100%);background:var(--panel);border-left:1px solid var(--line);padding:18px;overflow:auto}
+#drawer h3{margin:18px 0 8px;font-size:15px}
+#drawer h3:first-child{margin-top:0}
+label.opt{display:flex;gap:8px;align-items:flex-start;padding:5px 0;font-size:14px;cursor:pointer}
+label.opt small{display:block;color:var(--muted);font-size:12px}
+.list{border:1px solid var(--line);border-radius:8px;max-height:260px;overflow:auto}
+.list div{display:flex;justify-content:space-between;align-items:center;padding:6px 10px;border-bottom:1px solid var(--line);font-size:13.5px}
+.list div:last-child{border-bottom:0}
+.list .empty{color:var(--muted);justify-content:center}
+textarea{width:100%;height:90px;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:8px;font:12px monospace;padding:8px}
+.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#2b3140;border:1px solid var(--line);padding:8px 14px;border-radius:8px;font-size:13px;display:none;z-index:30}
+.toast button{margin-left:10px}
+.syncst{font-size:12px;color:var(--muted)}.syncst.ok{color:var(--good)}.syncst.error{color:var(--bad)}
+input[type=password]{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:7px 10px;font:inherit;font-size:13px}
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <h1>TV <span>Today</span></h1>
+    <div class="datenav">
+      <button id="prev" title="Previous day">◀</button>
+      <div id="dateLabel">…</div>
+      <button id="next" title="Next day">▶</button>
+      <button id="today">Today</button>
+    </div>
+    <div class="spacer"></div>
+    <input type="search" id="q" placeholder="Filter by title…">
+    <button id="refresh" title="Reload schedules">↻</button>
+    <span id="syncStatus" class="syncst"></span>
+    <button id="settingsBtn">⚙ Settings</button>
+  </div>
+  <div class="tabs" id="tabs"></div>
+</header>
+<main id="main"><div class="status">Loading schedules…</div></main>
+
+<div id="drawer"><div class="panel" id="panel"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+// TV Today — new TV (US, UK, streaming) and anime airing today.
+// Data: TVmaze (api.tvmaze.com) and AniList (graphql.anilist.co).
+// Your settings live in this browser (localStorage).
+
+// ---------- Shows you already like (seeded from your library + likes) ----------
+const SEED_TITLES = [
+ // library series
+ "Berserk","Chainsaw Man","Demon Slayer","KonoSuba","One Punch Man","Pokemon","Solo Leveling","Sword Art Online",
+ "Baby Assassins Everyday","Battle Angel Alita","Blade of the Immortal","Chainsmoker Cat","Claymore","Cowboy Bebop",
+ "Cyberpunk Edgerunners","Delicious in Dungeon","Dungeon Meshi","Dororo","Dragon Ball","Dragon Ball Z","Dragon Ball GT","Dragon Ball Daima","Dragon Ball Super",
+ "Gatchaman","Hell Mode","How Not to Summon a Demon Lord","Iron Man","Is It Wrong to Try to Pick Up Girls in a Dungeon","Danmachi",
+ "Killed Again Mr Detective","Monster Rancher","Nia Liston","One Piece","Rick and Morty The Anime","Rooster Fighter",
+ "The Cat and the Dragon","The Eminence in Shadow","The Seven Deadly Sins","Speed Racer","Terminator Zero","Wolverine","X-Men","Samurai Pizza Cats",
+ // shows you've said you like
+ "Aeon Flux","Skeleton Warriors","The Maxx","Samurai Jack","Hit-Monkey","Golden Axe","Misfit of Demon King Academy","Magic Repo Man",
+ "Black Clover","Tomb Raider King","The World's Finest Assassin","The Fruit of Evolution","My Unique Skill Makes Me OP Even at Level 1",
+ "Level 9999 Unlimited Gacha","Unlimited Gacha","The Wrong Way to Use Healing Magic","Uglymug Epicfighter","Shangri-La Frontier",
+ "A Wild Last Boss Appeared","Berserk of Gluttony","Arifureta","The Rising of the Shield Hero","Overlord","Frieren","Sakamoto Days",
+ "The Ossan Newbie Adventurer","Bofuri","Skeleton Knight in Another World","That Time I Got Reincarnated as a Slime",
+ "I May Be a Guild Receptionist","Yu Yu Hakusho","Reborn as a Vending Machine"
+];
+
+// ---------- Anime taste profile (from your library: isekai, dark fantasy, action, comedy fantasy) ----------
+const TAG_W = {
+ "Isekai":4,"Reincarnation":3,"Video Games":2,"Dungeon":2,"Swordplay":2,"Demons":2,"Gore":2,"Anti-Hero":2,"Assassins":2,
+ "Cats":2,"Skeleton":2,"Martial Arts":2,"Cyberpunk":2,"Samurai":2,"Super Power":1,"Magic":1,"Seinen":1,"Shounen":1,"Revenge":1,
+ "Dragons":1,"Male Protagonist":1,"Survival":1,"Mercenary":1,"Ninja":1,"Guns":1,"Gods":1,"Elf":1,"Primarily Adult Cast":1,
+ "Parody":1,"Slapstick":1,"Satire":1,"Cultivation":1,"Body Horror":1,"Monster Girl":0,
+ "Idol":-3,"Kids":-3,"Shoujo":-2,"Cute Girls Doing Cute Things":-2,"Boys' Love":-2,"Iyashikei":-1,"Josei":-1,"Yuri":-1,
+ "Primarily Female Cast":-1,"Office Lady":-1,"Female Harem":0
+};
+const GENRE_W = {"Action":2,"Fantasy":2,"Adventure":1,"Comedy":1,"Horror":1,"Supernatural":1,"Sci-Fi":1,
+ "Romance":-1,"Slice of Life":-1,"Sports":-2,"Mahou Shoujo":-2,"Music":-2};
+const STRONG_MATCH = 7, MAYBE_MATCH = 4;
+
+// ---------- Filter heuristics ----------
+const KIDS_NETWORKS = /^(Nickelodeon|Nick Jr\.?|Nicktoons|Disney Channel|Disney Junior|Disney XD|PBS Kids|CBBC|CBeebies|Universal Kids|Cartoonito|Boomerang|Baby ?TV|Discovery Family|Milkshake!?|CITV|Tiny Pop|Pop)$/i;
+const DATING_WORDS = /(love island|hunt for love|bachelor|bachelorette|love is blind|married at first sight|90 day|too hot to handle|temptation island|perfect match|are you the one|ex on the beach|fboy island|first dates|naked attraction|farmer wants a wife|dating|love triangle|love after lockup|my mom, your dad|the ultimatum|single'?s inferno|marriage pact|match ?made|love ?u?nder|later dating|i kissed a boy|i kissed a girl|love on the spectrum)/i;
+const KNOWN_SOAPS = /^(general hospital|days of our lives|the young and the restless|the bold and the beautiful|beyond the gates|eastenders|coronation street|emmerdale|hollyoaks|doctors|neighbours|home and away|river city|pobol y cwm|fair city|shortland street)$/i;
+const MAJOR_STREAMERS = /^(Netflix|Prime Video|Amazon Prime Video|Disney\+|HBO Max|Max|Apple TV\+?|Hulu|Peacock|Paramount\+|Crunchyroll|HIDIVE|Shudder|AMC\+|BritBox|Acorn TV|BBC iPlayer|ITVX|Channel 4|Tubi|The Roku Channel|Adult Swim|Dropout|MGM\+|Starz|Showtime|Freevee)$/i;
+const UK_MAIN = /^(BBC One|BBC Two|BBC Three|BBC iPlayer|ITV1|ITV|ITVX|Channel 4)$/i;
+
+// ---------- Settings (localStorage) ----------
+const STORE = "tvtoday.v1";
+const DEFAULTS = {
+  hidden:{},       // key -> {title, at}
+  watching:{},     // key -> title   (manually starred)
+  unwatch:{},      // key -> title   (seed matches you turned off)
+  filters:{kids:true,dating:true,talk:true,soap:true,sports:true,news:true,otherUK:true,foreignWeb:true},
+  collapsed:{}
+};
+let S = load();
+function load(){
+  try{ const s = JSON.parse(localStorage.getItem(STORE)||"null"); if(s) return merge(structuredClone(DEFAULTS), s); }catch(e){}
+  return structuredClone(DEFAULTS);
+}
+function merge(a,b){ for(const k in b){ if(b[k] && typeof b[k]==="object" && !Array.isArray(b[k]) && a[k] && typeof a[k]==="object") merge(a[k],b[k]); else a[k]=b[k]; } return a; }
+function saveLocal(){ try{ localStorage.setItem(STORE, JSON.stringify(S)); }catch(e){} }
+function save(){ S.updatedAt = Date.now(); saveLocal(); schedulePush(); }
+
+// ---------- Sync between devices (private GitHub gist) ----------
+const SYNC_KEY = "tvtoday.sync", GIST_FILE = "tvtoday-settings.json";
+let SY = (() => { try{ return JSON.parse(localStorage.getItem(SYNC_KEY)||"null") || {}; }catch(e){ return {}; } })();
+function saveSync(){ try{ localStorage.setItem(SYNC_KEY, JSON.stringify(SY)); }catch(e){} }
+const syncOn = () => !!(SY.token && SY.gistId);
+function setSync(state, msg){
+  const el = document.getElementById("syncStatus"); if(!el) return;
+  el.className = "syncst " + state;
+  el.textContent = state==="busy" ? "Syncing…" : state==="ok" ? "✓ Synced" : state==="error" ? "⚠ Sync error" : "";
+  el.title = msg || "";
+}
+async function gh(path, opts){
+  opts = opts || {};
+  const headers = {"Accept":"application/vnd.github+json", "Authorization":"Bearer "+SY.token};
+  if(opts.body) headers["Content-Type"] = "application/json";
+  const r = await fetch("https://api.github.com"+path, {method: opts.method||"GET", headers, body: opts.body, cache:"no-store"});
+  if(!r.ok) throw new Error("GitHub said "+r.status+(r.status===401?" — the token wasn't accepted (expired or mistyped?)":r.status===404?" — settings gist not found":""));
+  return r.json();
+}
+function syncPayload(){ return JSON.stringify({updatedAt:S.updatedAt||0, hidden:S.hidden, watching:S.watching, unwatch:S.unwatch, filters:S.filters}, null, 1); }
+async function findOrCreateGist(){
+  for(let p = 1; p <= 5; p++){
+    const list = await gh(`/gists?per_page=100&page=${p}`);
+    const g = list.find(x => x.files && x.files[GIST_FILE]);
+    if(g) return g.id;
+    if(list.length < 100) break;
+  }
+  const g = await gh("/gists", {method:"POST", body: JSON.stringify({description:"TV Today settings (synced between devices)", public:false, files:{[GIST_FILE]:{content:syncPayload()}}})});
+  return g.id;
+}
+async function pull(){
+  if(!syncOn()) return;
+  setSync("busy");
+  try{
+    const g = await gh("/gists/"+SY.gistId);
+    const f = g.files && g.files[GIST_FILE];
+    let remote = null;
+    if(f){ try{ remote = JSON.parse(f.truncated ? await (await fetch(f.raw_url)).text() : f.content); }catch(e){ remote = null; } }
+    if(remote && (remote.updatedAt||0) > (S.updatedAt||0)){
+      S.hidden = remote.hidden || {}; S.watching = remote.watching || {}; S.unwatch = remote.unwatch || {};
+      S.filters = merge(structuredClone(DEFAULTS.filters), remote.filters || {});
+      S.updatedAt = remote.updatedAt;
+      saveLocal(); if(items.length) render();
+    } else if(!remote || (S.updatedAt||0) > (remote.updatedAt||0)){
+      await push(true);
+    }
+    setSync("ok");
+  }catch(e){ setSync("error", e.message); }
+}
+let pushTimer = null;
+function schedulePush(){ if(!syncOn()) return; clearTimeout(pushTimer); pushTimer = setTimeout(() => push(), 1200); }
+async function push(inner){
+  if(!syncOn()) return;
+  if(!inner) setSync("busy");
+  try{
+    await gh("/gists/"+SY.gistId, {method:"PATCH", body: JSON.stringify({files:{[GIST_FILE]:{content:syncPayload()}}})});
+    if(!inner) setSync("ok");
+  }catch(e){ setSync("error", e.message); if(inner) throw e; }
+}
+
+// ---------- Helpers ----------
+const $ = s => document.querySelector(s);
+const esc = s => String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const strip = s => String(s||"").replace(/<br\s*\/?>/gi," ").replace(/<[^>]+>/g,"").replace(/\s+/g," ").trim();
+const norm = s => " "+String(s||"").normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().replace(/&/g," and ").replace(/['’]/g,"").replace(/[^a-z0-9]+/g," ").trim()+" ";
+const SEEDS = SEED_TITLES.map(norm);
+function seedMatch(titles){ const ns = titles.filter(Boolean).map(norm); return SEEDS.some(sd => ns.some(t => t.startsWith(sd) || (sd.length>8 && t.includes(sd)))); }
+const pad = n => String(n).padStart(2,"0");
+const ymd = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const fmtTime = d => d.toLocaleTimeString([], {hour:"numeric", minute:"2-digit"});
+
+let day = new Date(); day.setHours(0,0,0,0);
+let items = [];
+let activeTab = "all";
+
+// ---------- Fetch: TVmaze ----------
+async function getJSON(url, opts){
+  const r = await fetch(url, opts);
+  if(!r.ok) throw new Error(url.split("?")[0]+" → HTTP "+r.status);
+  return r.json();
+}
+async function fetchTVmaze(dateStr){
+  const [us, gb, web] = await Promise.all([
+    getJSON(`https://api.tvmaze.com/schedule?country=US&date=${dateStr}`),
+    getJSON(`https://api.tvmaze.com/schedule?country=GB&date=${dateStr}`),
+    getJSON(`https://api.tvmaze.com/schedule/web?date=${dateStr}`)
+  ]);
+  const out = [];
+  const add = (ep, show, region) => out.push({ep, show, region});
+  us.forEach(e => add(e, e.show, "US"));
+  gb.forEach(e => add(e, e.show, "UK"));
+  web.forEach(e => add(e, e._embedded && e._embedded.show, "Streaming"));
+  return out.filter(x => x.show);
+}
+
+// ---------- Fetch: AniList ----------
+const AL_Q = `query($s:Int,$e:Int,$p:Int){Page(page:$p,perPage:50){pageInfo{hasNextPage}
+ airingSchedules(airingAt_greater:$s,airingAt_lesser:$e,sort:TIME){airingAt episode
+  media{id siteUrl isAdult format countryOfOrigin episodes status title{romaji english} synonyms genres
+   tags{name rank} coverImage{medium} description(asHtml:false) externalLinks{site url type} season seasonYear}}}}`;
+async function fetchAniList(start, end){
+  let p = 1, all = [];
+  while(p <= 6){
+    const j = await getJSON("https://graphql.anilist.co", {method:"POST", headers:{"Content-Type":"application/json","Accept":"application/json"},
+      body: JSON.stringify({query:AL_Q, variables:{s:Math.floor(start/1000)-1, e:Math.floor(end/1000), p}})});
+    if(j.errors) throw new Error("AniList: "+j.errors.map(e=>e.message).join("; "));
+    all = all.concat(j.data.Page.airingSchedules);
+    if(!j.data.Page.pageInfo.hasNextPage) break;
+    p++;
+  }
+  return all;
+}
+
+// ---------- Normalize into cards ----------
+function buildTV(rows, dateStr){
+  const groups = new Map();
+  for(const {ep, show, region} of rows){
+    const ch = show.webChannel || show.network || {};
+    const chCountry = ch.country ? ch.country.code : null;
+    // anime is handled by AniList
+    if((show.genres||[]).includes("Anime")) continue;
+    const key = "tvm:"+show.id;
+    let g = groups.get(key);
+    if(!g){
+      g = {key, kind:"tv", title:show.name, show, region, channel:ch.name||"", chCountry, eps:[], titles:[show.name],
+           image: show.image && (show.image.medium||show.image.original), link: show.url, site: show.officialSite,
+           summary: strip(show.summary), genres: show.genres||[], type: show.type, language: show.language};
+      groups.set(key, g);
+    }
+    if(!g.eps.some(x => x.id === ep.id)) g.eps.push(ep);
+  }
+  const out = [];
+  for(const g of groups.values()){
+    g.eps.sort((a,b) => (a.season-b.season) || ((a.number||0)-(b.number||0)));
+    const f = g.eps[0], l = g.eps[g.eps.length-1];
+    g.time = f.airstamp ? new Date(f.airstamp) : null;
+    g.streamDrop = g.region==="Streaming" && !f.airtime;
+    g.isNewSeries = g.eps.some(e => e.season===1 && e.number===1) || (g.show.premiered === dateStr);
+    g.isSeasonPremiere = !g.isNewSeries && g.eps.some(e => e.number===1 && e.season>1);
+    const sn = e => e.number!=null ? `S${e.season}E${e.number}` : (e.type==="significant_special" ? "Special" : "Special");
+    g.epLabel = g.eps.length>1 ? `${sn(f)}–${l.number!=null?"E"+l.number:""} (${g.eps.length} episodes)` : sn(f);
+    g.epTitle = g.eps.length===1 && f.name && !/^(episode|chapter|part) \d+$/i.test(f.name) ? f.name : "";
+    g.airtime = f.airtime || "";
+    g.category = classifyTV(g);
+    out.push(g);
+  }
+  return out;
+}
+function classifyTV(g){
+  const t = g.type, gen = g.genres, name = g.title, ch = g.channel;
+  const days = (g.show.schedule && g.show.schedule.days) || [];
+  if(t === "News") return "news";
+  if(t === "Sports" || gen.includes("Sports")) return "sports";
+  if(gen.includes("Children") || KIDS_NETWORKS.test(ch)) return "kids";
+  if(t === "Talk Show" && g.airtime && g.airtime < "17:00") return "talk";
+  if(t === "Reality" && (gen.includes("Romance") || DATING_WORDS.test(name))) return "dating";
+  if(KNOWN_SOAPS.test(name) || (t === "Scripted" && days.length >= 5 && (gen.includes("Drama") || gen.includes("Romance") || gen.length===0))) return "soap";
+  if(g.region === "UK" && !UK_MAIN.test(ch)) return "otherUK";
+  if(g.region === "Streaming" && g.chCountry && !["US","GB"].includes(g.chCountry)) return "foreignWeb";
+  if(g.region === "Streaming" && g.chCountry === "GB" && !UK_MAIN.test(ch)) return "otherUK";
+  if(g.region === "Streaming" && !g.chCountry && g.language && g.language !== "English" && !MAJOR_STREAMERS.test(ch)) return "foreignWeb";
+  return "";
+}
+
+function buildAnime(rows){
+  const groups = new Map();
+  for(const r of rows){
+    const m = r.media;
+    if(!m || m.isAdult) continue;
+    if(!["TV","TV_SHORT","ONA","SPECIAL","OVA"].includes(m.format)) continue;
+    const key = "al:"+m.id;
+    let g = groups.get(key);
+    const title = m.title.english || m.title.romaji;
+    if(!g){
+      const tags = (m.tags||[]).filter(t => t.rank >= 40).map(t => t.name);
+      let score = 0;
+      tags.forEach(t => score += (TAG_W[t]||0));
+      (m.genres||[]).forEach(x => score += (GENRE_W[x]||0));
+      const links = (m.externalLinks||[]).filter(l => l.type==="STREAMING" || /crunchyroll|hidive|netflix|hulu|prime|disney|max|bilibili|youtube/i.test(l.site));
+      const uniq = []; const seen = new Set();
+      links.forEach(l => { if(!seen.has(l.site)){ seen.add(l.site); uniq.push(l); } });
+      g = {key, kind:"anime", title, alt: m.title.english && m.title.romaji !== m.title.english ? m.title.romaji : "",
+           titles:[m.title.english, m.title.romaji, ...(m.synonyms||[])], eps:[], image: m.coverImage && m.coverImage.medium,
+           link: m.siteUrl, streams: uniq, genres: m.genres||[], tags, score, country: m.countryOfOrigin, format: m.format,
+           totalEps: m.episodes, summary: strip(m.description)};
+      g.category = (m.genres||[]).includes("Sports") ? "sports" : ((m.tags||[]).some(t => t.name==="Kids" && t.rank>=50) ? "kids" : "");
+      groups.set(key, g);
+    }
+    g.eps.push(r);
+  }
+  const out = [];
+  for(const g of groups.values()){
+    g.eps.sort((a,b) => a.episode - b.episode);
+    const f = g.eps[0], l = g.eps[g.eps.length-1];
+    g.time = new Date(f.airingAt*1000);
+    g.epLabel = g.eps.length>1 ? `Episodes ${f.episode}–${l.episode}` : `Episode ${f.episode}${g.totalEps ? " of "+g.totalEps : ""}`;
+    g.isNewSeries = f.episode === 1;
+    g.isSeasonPremiere = false;
+    g.region = "Anime";
+    g.channel = g.streams.length ? g.streams.map(s=>s.site).slice(0,3).join(" · ") : "Japan TV";
+    out.push(g);
+  }
+  return out;
+}
+
+// ---------- Status helpers ----------
+const isWatching = g => !!S.watching[g.key] || (!S.unwatch[g.key] && seedMatch(g.titles));
+const isSeeded = g => !S.watching[g.key] && !S.unwatch[g.key] && seedMatch(g.titles);
+const isHidden = g => !!S.hidden[g.key];
+const filteredOut = g => g.category && S.filters[g.category] && !isWatching(g);
+
+// ---------- Render ----------
+const FILTER_LABELS = {kids:"Kids shows", dating:"Reality dating", talk:"Daytime talk", soap:"Soap operas", sports:"Sports",
+  news:"News", otherUK:"Other UK channels", foreignWeb:"Non-US/UK streaming"};
+
+function sections(){
+  const q = norm($("#q").value).trim();
+  const vis = items.filter(g => !isHidden(g) && !filteredOut(g) && (!q || g.titles.some(t => norm(t).includes(q))));
+  const used = new Set();
+  const take = (fn) => { const r = vis.filter(g => !used.has(g.key) && fn(g)); r.forEach(g=>used.add(g.key)); return r; };
+  const byTime = (a,b) => (a.time||0) - (b.time||0);
+  const out = [];
+  out.push({id:"watching", title:"★ Shows you watch", sub:"Shows you've starred, plus matches from your library and favorites.", list: take(isWatching).sort(byTime)});
+  out.push({id:"new", title:"New series", sub:"Series premieres (Season 1, Episode 1) — TV and anime.", list: take(g => g.isNewSeries).sort((a,b)=> (a.kind===b.kind?0:a.kind==="anime"?1:-1) || byTime(a,b))});
+  out.push({id:"season", title:"Season premieres", sub:"Returning shows starting a new season.", list: take(g => g.isSeasonPremiere).sort(byTime)});
+  out.push({id:"animePicks", title:"Anime picked for you", sub:"Ranked by how well genres and tags match what's in your library (isekai, dark fantasy, action, fantasy comedy).", list: take(g => g.kind==="anime" && g.score >= MAYBE_MATCH).sort((a,b)=> b.score-a.score || byTime(a,b))});
+  out.push({id:"streaming", title:"Streaming", list: take(g => g.region==="Streaming").sort(byTime)});
+  out.push({id:"us", title:"US TV", list: take(g => g.region==="US").sort(byTime)});
+  out.push({id:"uk", title:"UK TV", list: take(g => g.region==="UK").sort(byTime)});
+  out.push({id:"anime", title:"Other anime airing today", list: take(g => g.kind==="anime").sort((a,b)=> b.score-a.score || byTime(a,b))});
+  const hiddenCount = items.filter(isHidden).length;
+  const filteredCount = items.filter(g => !isHidden(g) && filteredOut(g)).length;
+  return {secs: out, hiddenCount, filteredCount};
+}
+
+function card(g){
+  const w = isWatching(g);
+  const chips = [];
+  if(g.isNewSeries) chips.push(`<span class="chip new">NEW SERIES</span>`);
+  if(g.isSeasonPremiere) chips.push(`<span class="chip prem">SEASON PREMIERE</span>`);
+  if(g.kind==="anime" && g.score >= STRONG_MATCH) chips.push(`<span class="chip match">Great match</span>`);
+  else if(g.kind==="anime" && g.score >= MAYBE_MATCH) chips.push(`<span class="chip match">Possible match</span>`);
+  if(isSeeded(g)) chips.push(`<span class="chip lib">In your library / likes</span>`);
+  if(g.channel) chips.push(`<span class="chip net">${esc(g.channel)}</span>`);
+  if(g.kind==="tv"){
+    if(g.streamDrop) chips.push(`<span class="chip time">Streaming drop</span>`);
+    else if(g.time) chips.push(`<span class="chip time">${esc(fmtTime(g.time))}</span>`);
+  } else {
+    chips.push(`<span class="chip time">${esc(fmtTime(g.time))} (Japan airing)</span>`);
+  }
+  if(g.kind==="tv" && g.type && g.type!=="Scripted") chips.push(`<span class="chip">${esc(g.type)}</span>`);
+  if(g.kind==="anime" && g.country && g.country!=="JP") chips.push(`<span class="chip">${g.country==="CN"?"Donghua (China)":g.country==="KR"?"Korea":esc(g.country)}</span>`);
+  (g.genres||[]).slice(0,3).forEach(x => chips.push(`<span class="chip">${esc(x)}</span>`));
+  if(g.kind==="anime") g.tags.filter(t => (TAG_W[t]||0) >= 2).slice(0,3).forEach(t => chips.push(`<span class="chip">${esc(t)}</span>`));
+  const links = [];
+  if(g.kind==="anime"){
+    g.streams.forEach(s => links.push(`<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.site)}</a>`));
+    links.push(`<a href="${esc(g.link)}" target="_blank" rel="noopener">AniList</a>`);
+  } else {
+    if(g.site) links.push(`<a href="${esc(g.site)}" target="_blank" rel="noopener">Official site</a>`);
+    links.push(`<a href="${esc(g.link)}" target="_blank" rel="noopener">TVmaze</a>`);
+  }
+  if(g.summary) links.push(`<a href="#" data-act="more">Summary</a>`);
+  return `<div class="card${w?" watch":""}" data-key="${esc(g.key)}">
+    <div class="poster" style="${g.image?`background-image:url('${esc(g.image)}')`:""}"></div>
+    <div class="body">
+      <div class="title"><a href="${esc(g.link)}" target="_blank" rel="noopener">${esc(g.title)}</a></div>
+      ${g.alt?`<div class="ep">${esc(g.alt)}</div>`:""}
+      <div class="ep">${esc(g.epLabel)}${g.epTitle?` · “${esc(g.epTitle)}”`:""}</div>
+      <div class="meta">${chips.join("")}</div>
+      <div class="links">${links.join("")}</div>
+      <div class="summary">${esc(g.summary)}</div>
+    </div>
+    <div class="acts">
+      <button class="star${w?" on":""}" data-act="star" title="${w?"Stop following":"Follow this show"}">${w?"★":"☆"}</button>
+      <button class="hide" data-act="hide" title="Hide this show from now on">✕</button>
+    </div>
+  </div>`;
+}
+
+function render(){
+  const {secs, hiddenCount, filteredCount} = sections();
+  const tabs = [{id:"all", label:"All"}, ...secs.filter(s => s.list.length).map(s => ({id:s.id, label:s.title.replace("★ ",""), n:s.list.length}))];
+  if(!tabs.some(t => t.id===activeTab)) activeTab = "all";
+  $("#tabs").innerHTML = tabs.map(t => `<button class="tab${t.id===activeTab?" on":""}" data-tab="${t.id}">${esc(t.label)}${t.n!=null?`<span class="n">${t.n}</span>`:""}</button>`).join("")
+    + `<span class="sub" style="margin:4px 0 0 8px">${filteredCount} filtered · ${hiddenCount} hidden</span>`;
+  const shown = secs.filter(s => s.list.length && (activeTab==="all" || s.id===activeTab));
+  if(!shown.length){ $("#main").innerHTML = `<div class="status">Nothing to show for this day with your current filters.</div>`; return; }
+  $("#main").innerHTML = shown.map(s => {
+    const col = activeTab==="all" && S.collapsed[s.id];
+    return `<section data-sec="${s.id}" class="${col?"collapsed":""}">
+      <h2><span class="caret">${col?"▸":"▾"}</span>${esc(s.title)} <span class="count">${s.list.length}</span></h2>
+      ${s.sub?`<div class="sub">${esc(s.sub)}</div>`:""}
+      <div class="grid">${s.list.map(card).join("")}</div></section>`;
+  }).join("");
+}
+
+// ---------- Load a day ----------
+let loadToken = 0;
+async function loadDay(){
+  const tok = ++loadToken;
+  const dateStr = ymd(day);
+  const isToday = dateStr === ymd(new Date());
+  $("#dateLabel").textContent = (isToday ? "Today, " : "") + day.toLocaleDateString([], {weekday:"short", month:"short", day:"numeric"});
+  $("#main").innerHTML = `<div class="status">Loading schedules for ${esc(dateStr)}…</div>`;
+  const start = day.getTime(), end = start + 86400000;
+  const errors = [];
+  const [tv, an] = await Promise.all([
+    fetchTVmaze(dateStr).catch(e => { errors.push("TVmaze: "+e.message); return []; }),
+    fetchAniList(start, end).catch(e => { errors.push(e.message.startsWith("AniList")?e.message:"AniList: "+e.message); return []; })
+  ]);
+  if(tok !== loadToken) return;
+  items = [...buildTV(tv, dateStr), ...buildAnime(an)];
+  render();
+  if(errors.length) $("#main").insertAdjacentHTML("afterbegin", `<div class="status err">Couldn't load part of the schedule — ${esc(errors.join(" | "))}. Try ↻ in a minute.</div>`);
+}
+
+// ---------- Settings drawer ----------
+function openSettings(){
+  const f = S.filters;
+  const hid = Object.entries(S.hidden).sort((a,b)=> (a[1].title||"").localeCompare(b[1].title||""));
+  const wat = Object.entries(S.watching);
+  $("#panel").innerHTML = `
+   <div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0">Settings</h3><button data-act="close">Close</button></div>
+   <h3>Hide these kinds of shows</h3>
+   ${Object.entries(FILTER_LABELS).map(([k,l]) => `<label class="opt"><input type="checkbox" data-filter="${k}" ${f[k]?"checked":""}>
+     <span>${l}<small>${{
+       kids:"Children's genre, kids' channels (Nick, Disney Jr, CBeebies…), anime tagged Kids",
+       dating:"Reality shows about dating/romance. Game shows (Blind Date, The Dating Game) still show",
+       talk:"Talk shows airing before 5pm. Late-night talk still shows",
+       soap:"Daily scripted dramas (General Hospital, EastEnders, Emmerdale…)",
+       sports:"Live sports and sports shows; sports anime",
+       news:"News programs",
+       otherUK:"UK channels besides BBC One/Two/Three, iPlayer, ITV1/ITVX, Channel 4",
+       foreignWeb:"Streaming services based outside the US/UK (Tencent, Youku, Okko…) and non-English shows on YouTube and similar. Non-English shows on Netflix, Prime, Disney+, etc. still show"}[k]}</small></span></label>`).join("")}
+   <div class="sub" style="margin-top:6px">Shows you follow (★) always appear, even if a filter would hide them.</div>
+   <h3>Hidden shows (${hid.length})</h3>
+   <div class="list">${hid.length ? hid.map(([k,v]) => `<div><span>${esc(v.title)}</span><button data-unhide="${esc(k)}">Unhide</button></div>`).join("") : `<div class="empty">None yet — click ✕ on any show.</div>`}</div>
+   <h3>Shows you follow (${wat.length})</h3>
+   <div class="sub" style="margin:0 0 6px">Shows matching your library and favorites are followed automatically; ☆ un-follows them.</div>
+   <div class="list">${wat.length ? wat.map(([k,v]) => `<div><span>${esc(v)}</span><button data-unstar="${esc(k)}">Remove</button></div>`).join("") : `<div class="empty">Star (☆) shows to follow them.</div>`}</div>
+   <h3>Sync between devices</h3>
+   ${syncOn() ? `<div class="sub" style="margin:0 0 8px">Connected. Hidden shows, followed shows and filters sync through a private gist on your GitHub account.</div>
+     <div style="display:flex;gap:6px"><button data-act="syncnow">Sync now</button><button data-act="disconnect">Disconnect this device</button></div>`
+   : `<div class="sub" style="margin:0 0 8px">Keeps your hidden and followed shows the same on your PC and phone. Do this once on each device:<br>
+     1. <a href="https://github.com/settings/tokens/new?scopes=gist&description=TV%20Today%20sync" target="_blank" rel="noopener">Create a GitHub token</a> (only the <b>gist</b> box ticked; set Expiration to "No expiration" or a year).<br>
+     2. Paste it here and press Connect. The token stays in this browser only.</div>
+     <input type="password" id="tok" placeholder="ghp_…" autocomplete="off">
+     <div style="margin-top:6px"><button class="primary" data-act="connect">Connect</button></div>`}
+   <h3>Back up / move your settings</h3>
+   <div class="sub" style="margin:0 0 6px">Your hidden and followed shows are saved in this browser. Copy this text to keep a backup or move it to another browser.</div>
+   <textarea id="backup">${esc(JSON.stringify({hidden:S.hidden,watching:S.watching,unwatch:S.unwatch,filters:S.filters}))}</textarea>
+   <div style="display:flex;gap:6px;margin-top:6px"><button data-act="copy">Copy</button><button data-act="import">Load from text above</button></div>
+   <h3>About</h3>
+   <div class="sub" style="margin:0">Schedules from <a href="https://www.tvmaze.com" target="_blank">TVmaze</a> (TV and streaming) and <a href="https://anilist.co" target="_blank">AniList</a> (anime). Times are shown in your computer's time zone. Anime times are the Japanese broadcast; Crunchyroll/HIDIVE usually post within a few hours.</div>`;
+  $("#drawer").classList.add("on");
+}
+
+// ---------- Events ----------
+let undo = null;
+function toast(msg, undoFn){
+  const t = $("#toast");
+  t.innerHTML = esc(msg) + (undoFn ? `<button id="undoBtn">Undo</button>` : "");
+  t.style.display = "block";
+  undo = undoFn;
+  if(undoFn) $("#undoBtn").onclick = () => { undo && undo(); t.style.display="none"; };
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.style.display="none", 5000);
+}
+document.addEventListener("click", e => {
+  const tab = e.target.closest("[data-tab]");
+  if(tab){ activeTab = tab.dataset.tab; render(); window.scrollTo(0,0); return; }
+  const h2 = e.target.closest("section>h2");
+  if(h2 && activeTab==="all"){ const id = h2.parentElement.dataset.sec; S.collapsed[id] = !S.collapsed[id]; saveLocal(); render(); return; }
+  const btn = e.target.closest("[data-act]");
+  const cardEl = e.target.closest(".card");
+  if(btn && cardEl){
+    e.preventDefault();
+    const g = items.find(x => x.key === cardEl.dataset.key); if(!g) return;
+    if(btn.dataset.act === "more"){ cardEl.classList.toggle("open"); return; }
+    if(btn.dataset.act === "hide"){
+      S.hidden[g.key] = {title:g.title, at:Date.now()}; save(); render();
+      toast(`Hidden “${g.title}”`, () => { delete S.hidden[g.key]; save(); render(); });
+      return;
+    }
+    if(btn.dataset.act === "star"){
+      if(isWatching(g)){ delete S.watching[g.key]; if(seedMatch(g.titles)) S.unwatch[g.key] = g.title; }
+      else { S.watching[g.key] = g.title; delete S.unwatch[g.key]; }
+      save(); render(); return;
+    }
+  }
+  if(e.target.id === "drawer"){ $("#drawer").classList.remove("on"); return; }
+  if(btn && btn.dataset.act === "close"){ $("#drawer").classList.remove("on"); return; }
+  if(btn && btn.dataset.act === "connect"){
+    const tok = ($("#tok").value || "").trim();
+    if(!tok){ toast("Paste your GitHub token first"); return; }
+    SY = {token: tok}; btn.disabled = true; btn.textContent = "Connecting…";
+    (async () => {
+      try{ SY.gistId = await findOrCreateGist(); saveSync(); await pull(); openSettings(); toast("Sync connected"); }
+      catch(err){ SY = {}; saveSync(); setSync("error", err.message); openSettings(); toast("Couldn't connect: " + err.message); }
+    })();
+    return;
+  }
+  if(btn && btn.dataset.act === "disconnect"){ SY = {}; saveSync(); setSync(""); openSettings(); toast("Sync turned off on this device (your gist is kept)"); return; }
+  if(btn && btn.dataset.act === "syncnow"){ pull(); return; }
+  if(btn && btn.dataset.act === "copy"){ const ta = $("#backup"); ta.select(); (navigator.clipboard ? navigator.clipboard.writeText(ta.value) : Promise.reject()).then(()=>toast("Copied")).catch(()=>{document.execCommand("copy"); toast("Copied");}); return; }
+  if(btn && btn.dataset.act === "import"){
+    try{ const j = JSON.parse($("#backup").value); S = merge(structuredClone(DEFAULTS), j); save(); render(); openSettings(); toast("Settings loaded"); }
+    catch(err){ toast("That text isn't a valid backup"); }
+    return;
+  }
+  const un = e.target.closest("[data-unhide]");
+  if(un){ delete S.hidden[un.dataset.unhide]; save(); render(); openSettings(); return; }
+  const us = e.target.closest("[data-unstar]");
+  if(us){ delete S.watching[us.dataset.unstar]; save(); render(); openSettings(); return; }
+});
+document.addEventListener("change", e => {
+  const k = e.target.dataset && e.target.dataset.filter;
+  if(k){ S.filters[k] = e.target.checked; save(); render(); }
+});
+document.addEventListener("keydown", e => { if(e.key==="Escape") $("#drawer").classList.remove("on"); });
+$("#settingsBtn").onclick = openSettings;
+$("#prev").onclick = () => { day.setDate(day.getDate()-1); loadDay(); };
+$("#next").onclick = () => { day.setDate(day.getDate()+1); loadDay(); };
+$("#today").onclick = () => { day = new Date(); day.setHours(0,0,0,0); loadDay(); };
+$("#refresh").onclick = loadDay;
+$("#q").addEventListener("input", () => render());
+
+loadDay();
+pull();
+document.addEventListener("visibilitychange", () => { if(document.visibilityState === "visible") pull(); });
+</script>
+</body>
+</html>
