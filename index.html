@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src https: data:; connect-src https://api.tvmaze.com https://graphql.anilist.co https://api.github.com https://gist.githubusercontent.com https://api.watchmode.com https://streaming-availability.p.rapidapi.com; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src https: data:; connect-src 'self' https://api.tvmaze.com https://graphql.anilist.co https://api.github.com https://gist.githubusercontent.com; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -290,77 +290,9 @@ async function fetchAniList(start, end){
   return all;
 }
 
-// ---------- Fetch: Watchmode (new on streaming services) ----------
-const WM_KEY_STORE = "tvtoday.wmkey", WM_CACHE = "tvtoday.wmcache";
+// ---------- New on streaming (data saved by GitHub Actions; see scripts/fetch-new.mjs) ----------
 const WM_SERVICES = {203:"Netflix", 157:"Hulu", 634:"Hulu", 372:"Disney+", 387:"HBO Max", 389:"Peacock", 388:"Peacock", 444:"Paramount+", 371:"Apple TV+"};
-const wmKey = () => { try{ return localStorage.getItem(WM_KEY_STORE) || ""; }catch(e){ return ""; } };
 const shiftDate = (dateStr, n) => { const d = new Date(dateStr+"T12:00:00"); d.setDate(d.getDate()+n); return ymd(d); };
-async function fetchWatchmode(dateStr){
-  const key = wmKey(); if(!key) return null;
-  let cache = {}; try{ cache = JSON.parse(localStorage.getItem(WM_CACHE)||"{}"); }catch(e){}
-  const c = cache[dateStr];
-  if(c && Date.now() - c.at < 6*3600*1000) return c.rows;   // reuse for 6 hours to save your free quota
-  const sd = shiftDate(dateStr,-1).replace(/-/g,""), ed = shiftDate(dateStr,1).replace(/-/g,"");
-  const r = await fetch(`https://api.watchmode.com/v1/releases/?start_date=${sd}&end_date=${ed}&limit=250`, {headers:{"X-API-Key":key}});
-  if(r.status === 401) throw new Error("Watchmode didn't accept your key — check it in ⚙ Settings");
-  if(r.status === 429) throw new Error("Watchmode's monthly free quota is used up");
-  if(!r.ok) throw new Error("Watchmode → HTTP "+r.status);
-  const j = await r.json();
-  const rows = (j.releases||[]).filter(x => WM_SERVICES[x.source_id]);
-  // keep the cache small: last 10 days looked at
-  cache[dateStr] = {at:Date.now(), rows};
-  const keys = Object.keys(cache).sort((a,b)=> cache[b].at - cache[a].at).slice(0,10);
-  try{ localStorage.setItem(WM_CACHE, JSON.stringify(Object.fromEntries(keys.map(k=>[k,cache[k]])))); }catch(e){}
-  return rows;
-}
-// ---------- Fetch: Streaming Availability API (Movie of the Night, via RapidAPI) ----------
-const MOTN_KEY_STORE = "tvtoday.motnkey", MOTN_CACHE = "tvtoday.motncache";
-const MOTN_HOST = "streaming-availability.p.rapidapi.com";
-const MOTN_CATALOGS = {netflix:"Netflix", disney:"Disney+", hulu:"Hulu", hbo:"HBO Max", peacock:"Peacock", paramount:"Paramount+", apple:"Apple TV+"};
-const motnKey = () => { try{ return localStorage.getItem(MOTN_KEY_STORE) || ""; }catch(e){ return ""; } };
-async function motnGet(path, key){
-  const r = await fetch(`https://${MOTN_HOST}${path}`, {headers:{"X-RapidAPI-Key":key, "X-RapidAPI-Host":MOTN_HOST}});
-  const text = await r.text();
-  let j = null; try{ j = JSON.parse(text); }catch(e){}
-  if(!r.ok){
-    const msg = (j && (j.message || j.error)) || text.slice(0,150);
-    if(r.status === 401 || r.status === 403) throw new Error("Streaming Availability API refused the key (" + r.status + "): " + msg);
-    if(r.status === 429) throw new Error("Streaming Availability API daily free limit reached");
-    throw new Error("Streaming Availability API → HTTP " + r.status + ": " + msg);
-  }
-  return j;
-}
-async function fetchMotn(dateStr, opts){
-  const key = motnKey(); if(!key) return null;
-  opts = opts || {};
-  let cache = {}; try{ cache = JSON.parse(localStorage.getItem(MOTN_CACHE)||"{}"); }catch(e){}
-  const c = cache[dateStr];
-  if(!opts.fresh && c && Date.now() - c.at < 6*3600*1000) return c.rows;
-  const from = Math.floor(new Date(dateStr+"T00:00:00").getTime()/1000), to = from + 86400;
-  const rows = []; let cursor = "", pages = 0;
-  do{
-    const q = `/changes?change_type=new&item_type=show&country=us&catalogs=${Object.keys(MOTN_CATALOGS).join(",")}&from=${from}&to=${to}` + (cursor ? `&cursor=${encodeURIComponent(cursor)}` : "");
-    const j = await motnGet(q, key);
-    pages++;
-    const shows = (j && j.shows) || {};
-    for(const ch of (j && j.changes) || []){
-      const sh = shows[ch.showId] || {};
-      const svcId = (ch.service && ch.service.id) || "";
-      if(!MOTN_CATALOGS[svcId]) continue;
-      if(ch.streamingOptionType && !/subscription|free|addon/.test(ch.streamingOptionType)) continue;  // skip rent/buy
-      rows.push({id: ch.showId, title: sh.title || ch.showId, type: ch.showType || sh.showType || "", svc: MOTN_CATALOGS[svcId],
-                 imdb: sh.imdbId || "", tmdb: sh.tmdbId || "", year: sh.releaseYear || sh.firstAirYear || "",
-                 poster: sh.imageSet && sh.imageSet.verticalPoster && (sh.imageSet.verticalPoster.w240 || sh.imageSet.verticalPoster.w360) || "",
-                 overview: sh.overview || "", genres: (sh.genres||[]).map(g => g.name || g).filter(Boolean)});
-    }
-    cursor = j && j.hasMore ? j.nextCursor : "";
-    if(opts.pageInfo) opts.pageInfo.push({keys: Object.keys(j||{}), changes: ((j&&j.changes)||[]).length});
-  } while(cursor && pages < 5);
-  cache[dateStr] = {at:Date.now(), rows};
-  const keys = Object.keys(cache).sort((a,b)=> cache[b].at - cache[a].at).slice(0,10);
-  try{ localStorage.setItem(MOTN_CACHE, JSON.stringify(Object.fromEntries(keys.map(k=>[k,cache[k]])))); }catch(e){}
-  return rows;
-}
 function addMotn(list, rows){
   const byTitle = new Map(list.map(g => [norm(g.title), g]));
   for(const x of rows||[]){
@@ -381,6 +313,23 @@ function addMotn(list, rows){
   list.forEach(g => g.channel = g.services.join(" · "));
   return list;
 }
+
+// ---------- New-on-streaming data file (updated every 6 hours by GitHub Actions) ----------
+let NEWDATA = null;
+async function loadNewData(force){
+  if(NEWDATA && !force) return NEWDATA;
+  const r = await fetch("data/new-on-streaming.json?t=" + Math.floor(Date.now()/600000), {cache:"no-store"});  // at most one fresh copy per 10 minutes
+  if(r.status === 404) return (NEWDATA = {updated:0, motn:[], watchmode:[], log:[]});
+  if(!r.ok) throw new Error("New-on-streaming data → HTTP " + r.status);
+  return (NEWDATA = await r.json());
+}
+function newRowsForDay(d, dateStr){
+  const motn = (d.motn||[]).filter(x => ymd(new Date(x.ts*1000)) === dateStr);
+  const wm = (d.watchmode||[]).filter(x => String(x.source_release_date||"").slice(0,10) === dateStr);
+  return {motn, wm};
+}
+// old browser-stored keys are no longer used: clear them
+try{ ["tvtoday.wmkey","tvtoday.wmcache","tvtoday.motnkey","tvtoday.motncache"].forEach(k => localStorage.removeItem(k)); }catch(e){}
 
 function buildWatchmode(rows, dateStr){
   const groups = new Map();
@@ -626,14 +575,14 @@ async function loadDay(){
   $("#main").innerHTML = `<div class="status">Loading schedules for ${esc(dateStr)}…</div>`;
   const start = day.getTime(), end = start + 86400000;
   const errors = [];
-  const [tv, an, wm, sa] = await Promise.all([
+  const [tv, an, nd] = await Promise.all([
     fetchTVmaze(dateStr).catch(e => { errors.push("TVmaze: "+e.message); return []; }),
     fetchAniList(start, end).catch(e => { errors.push(e.message.startsWith("AniList")?e.message:"AniList: "+e.message); return []; }),
-    fetchWatchmode(dateStr).catch(e => { errors.push(e.message); return null; }),
-    fetchMotn(dateStr).catch(e => { errors.push(e.message); return null; })
+    loadNewData().catch(e => { errors.push(e.message); return null; })
   ]);
+  const nr = nd ? newRowsForDay(nd, dateStr) : {motn:[], wm:[]};
   if(tok !== loadToken) return;
-  items = [...buildTV(tv, dateStr), ...buildAnime(an), ...addMotn(buildWatchmode(wm, dateStr), sa)];
+  items = [...buildTV(tv, dateStr), ...buildAnime(an), ...addMotn(buildWatchmode(nr.wm, dateStr), nr.motn)];
   render();
   if(errors.length) $("#main").insertAdjacentHTML("afterbegin", `<div class="status err">Couldn't load part of the schedule — ${esc(errors.join(" | "))}. Try ↻ in a minute.</div>`);
 }
@@ -670,19 +619,8 @@ function openSettings(){
      2. Paste it here and press Connect. The token stays in this browser only.</div>
      <input type="password" id="tok" placeholder="ghp_…" autocomplete="off">
      <div style="margin-top:6px"><button class="primary" data-act="connect">Connect</button></div>`}
-   <h3>New on streaming (Watchmode)</h3>
-   ${wmKey() ? `<div class="sub" style="margin:0 0 8px">Connected. New movies and shows on Netflix, Disney+, Hulu, HBO Max, Peacock, Paramount+ and Apple TV+ appear in the "New on streaming" sections. Each day you look at uses about 1 request of your free monthly quota (results are reused for 6 hours).</div>
-     <button data-act="wmremove">Remove Watchmode key from this device</button>`
-   : `<div class="sub" style="margin:0 0 8px">Paste your free Watchmode API key to see what Netflix, Disney+, Hulu, HBO Max, Peacock, Paramount+ and Apple TV+ add each day. The key stays in this browser only (it isn't synced), so add it on each device.</div>
-     <input type="password" id="wmkey" placeholder="Watchmode API key" autocomplete="off">
-     <div style="margin-top:6px"><button class="primary" data-act="wmsave">Save key</button></div>`}
-   <h3>New on streaming (Streaming Availability API)</h3>
-   ${motnKey() ? `<div class="sub" style="margin:0 0 8px">Key saved on this device. Use Test to check what it returns for today.</div>
-     <div style="display:flex;gap:6px"><button data-act="motntest">Test</button><button data-act="motnremove">Remove key from this device</button></div>`
-   : `<div class="sub" style="margin:0 0 8px">Paste your RapidAPI key (from your Streaming Availability API subscription). It stays in this browser only and isn't synced.</div>
-     <input type="password" id="motnkey" placeholder="RapidAPI key" autocomplete="off">
-     <div style="margin-top:6px"><button class="primary" data-act="motnsave">Save key</button></div>`}
-   <pre id="motnout" style="white-space:pre-wrap;font-size:12px;color:var(--muted);margin:8px 0 0"></pre>
+   <h3>New on streaming</h3>
+   <div class="sub" style="margin:0 0 8px" id="newstatus">Checking…</div>
    <h3>Back up / move your settings</h3>
    <div class="sub" style="margin:0 0 6px">Your hidden and followed shows are saved in this browser. Copy this text to keep a backup or move it to another browser.</div>
    <textarea id="backup">${esc(JSON.stringify({hidden:S.hidden,watching:S.watching,unwatch:S.unwatch,filters:S.filters}))}</textarea>
@@ -690,6 +628,12 @@ function openSettings(){
    <h3>About</h3>
    <div class="sub" style="margin:0">Schedules from <a href="https://www.tvmaze.com" target="_blank">TVmaze</a> (TV and streaming) and <a href="https://anilist.co" target="_blank">AniList</a> (anime). New-on-streaming data from <a href="https://www.watchmode.com" target="_blank">Watchmode</a>. Times are shown in your computer's time zone. Anime times are the Japanese broadcast; Crunchyroll/HIDIVE usually post within a few hours.</div>`;
   $("#drawer").classList.add("on");
+  loadNewData(true).then(d => {
+    const el = $("#newstatus"); if(!el) return;
+    el.innerHTML = d.updated
+      ? `Data last updated ${esc(new Date(d.updated*1000).toLocaleString([], {weekday:"short", hour:"numeric", minute:"2-digit"}))}. It updates every 6 hours on GitHub, so opening this page never uses your API quota.<br><small>${esc((d.log||[])[0]||"")}</small>`
+      : "No data yet — the GitHub job hasn't run yet.";
+  }).catch(e => { const el = $("#newstatus"); if(el) el.textContent = "Couldn't read the data file: " + e.message; });
 }
 
 // ---------- Events ----------
@@ -738,37 +682,6 @@ document.addEventListener("click", e => {
   }
   if(btn && btn.dataset.act === "disconnect"){ SY = {}; saveSync(); setSync(""); openSettings(); toast("Sync turned off on this device (your gist is kept)"); return; }
   if(btn && btn.dataset.act === "syncnow"){ pull(); return; }
-  if(btn && btn.dataset.act === "wmsave"){
-    const k = ($("#wmkey").value||"").trim();
-    if(!/^[A-Za-z0-9]{20,80}$/.test(k)){ toast("That doesn't look like a Watchmode key"); return; }
-    try{ localStorage.setItem(WM_KEY_STORE, k); localStorage.removeItem(WM_CACHE); }catch(e){}
-    openSettings(); loadDay(); toast("Watchmode key saved"); return;
-  }
-  if(btn && btn.dataset.act === "motnsave"){
-    const k = ($("#motnkey").value||"").trim();
-    if(!/^[A-Za-z0-9_-]{20,100}$/.test(k)){ toast("That doesn't look like a RapidAPI key"); return; }
-    try{ localStorage.setItem(MOTN_KEY_STORE, k); localStorage.removeItem(MOTN_CACHE); }catch(e){}
-    openSettings(); loadDay(); toast("Key saved — press Test"); return;
-  }
-  if(btn && btn.dataset.act === "motnremove"){ try{ localStorage.removeItem(MOTN_KEY_STORE); localStorage.removeItem(MOTN_CACHE); }catch(e){} openSettings(); loadDay(); toast("Key removed"); return; }
-  if(btn && btn.dataset.act === "motntest"){
-    const out = $("#motnout"); out.textContent = "Testing…";
-    const pageInfo = [];
-    (async () => {
-      try{
-        const today = ymd(new Date()), yest = shiftDate(today,-1);
-        const a = await fetchMotn(today, {fresh:true, pageInfo});
-        const b = await fetchMotn(yest, {fresh:true, pageInfo});
-        const per = rows => Object.entries(rows.reduce((m,x)=>(m[x.svc]=(m[x.svc]||0)+1,m),{})).map(([k,v])=>k+" "+v).join(", ") || "none";
-        out.textContent = `OK — connected.\nToday: ${a.length} additions (${per(a)})\nYesterday: ${b.length} additions (${per(b)})\n` +
-          `Examples: ${[...a,...b].slice(0,6).map(x=>x.title+" ["+x.svc+"]").join("; ") || "none"}\n` +
-          `Requests used: ${pageInfo.length} · response fields: ${(pageInfo[0]||{}).keys}`;
-        loadDay();
-      }catch(err){ out.textContent = "Problem: " + err.message; }
-    })();
-    return;
-  }
-  if(btn && btn.dataset.act === "wmremove"){ try{ localStorage.removeItem(WM_KEY_STORE); localStorage.removeItem(WM_CACHE); }catch(e){} openSettings(); loadDay(); toast("Watchmode key removed"); return; }
   if(btn && btn.dataset.act === "copy"){ const ta = $("#backup"); ta.select(); (navigator.clipboard ? navigator.clipboard.writeText(ta.value) : Promise.reject()).then(()=>toast("Copied")).catch(()=>{document.execCommand("copy"); toast("Copied");}); return; }
   if(btn && btn.dataset.act === "import"){
     try{ const j = JSON.parse($("#backup").value); S = merge(structuredClone(DEFAULTS), j); save(); render(); openSettings(); toast("Settings loaded"); }
