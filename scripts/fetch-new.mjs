@@ -20,7 +20,7 @@ const log = [];
 if (process.env.MOTN_KEY) {
   // fetch from where the last run stopped (1 hour overlap), or the last 3 days on the first run
   const from = data.motnUpdatedTo ? data.motnUpdatedTo - 3600 : now - 3 * 86400;
-  let cursor = "", pages = 0, added = 0;
+  let cursor = "", pages = 0, added = 0, maxTs = 0;
   const seen = new Set(data.motn.map(x => `${x.id}|${x.svc}`));
   try {
     do {
@@ -32,6 +32,7 @@ if (process.env.MOTN_KEY) {
       pages++;
       const shows = j.shows || {};
       for (const ch of j.changes || []) {
+        if (ch.timestamp && ch.timestamp > maxTs) maxTs = ch.timestamp;
         const svcId = ch.service && ch.service.id;
         if (!MOTN_CATALOGS[svcId]) continue;
         if (ch.streamingOptionType && !/subscription|free|addon/.test(ch.streamingOptionType)) continue; // skip rent/buy
@@ -51,7 +52,8 @@ if (process.env.MOTN_KEY) {
       }
       cursor = j.hasMore ? j.nextCursor : "";
     } while (cursor && pages < MAX_MOTN_PAGES);
-    data.motnUpdatedTo = now;
+    // if we stopped at the page limit, resume from the last change we saw next time (results come oldest first)
+    data.motnUpdatedTo = cursor && maxTs ? maxTs + 3600 : now;
     log.push(`Streaming Availability: ${added} new, ${pages} request(s)${cursor ? " (stopped at page limit)" : ""}`);
   } catch (e) {
     log.push(`Streaming Availability error: ${e.message}`);
