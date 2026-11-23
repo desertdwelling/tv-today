@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src https: data:; connect-src https://api.tvmaze.com https://graphql.anilist.co https://api.github.com https://gist.githubusercontent.com; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src https: data:; connect-src https://api.tvmaze.com https://graphql.anilist.co https://api.github.com https://gist.githubusercontent.com https://api.watchmode.com; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -290,6 +290,51 @@ async function fetchAniList(start, end){
   return all;
 }
 
+// ---------- Fetch: Watchmode (new on streaming services) ----------
+const WM_KEY_STORE = "tvtoday.wmkey", WM_CACHE = "tvtoday.wmcache";
+const WM_SERVICES = {203:"Netflix", 157:"Hulu", 634:"Hulu", 372:"Disney+", 387:"HBO Max", 389:"Peacock", 388:"Peacock", 444:"Paramount+", 371:"Apple TV+"};
+const wmKey = () => { try{ return localStorage.getItem(WM_KEY_STORE) || ""; }catch(e){ return ""; } };
+const shiftDate = (dateStr, n) => { const d = new Date(dateStr+"T12:00:00"); d.setDate(d.getDate()+n); return ymd(d); };
+async function fetchWatchmode(dateStr){
+  const key = wmKey(); if(!key) return null;
+  let cache = {}; try{ cache = JSON.parse(localStorage.getItem(WM_CACHE)||"{}"); }catch(e){}
+  const c = cache[dateStr];
+  if(c && Date.now() - c.at < 6*3600*1000) return c.rows;   // reuse for 6 hours to save your free quota
+  const sd = shiftDate(dateStr,-1).replace(/-/g,""), ed = shiftDate(dateStr,1).replace(/-/g,"");
+  const r = await fetch(`https://api.watchmode.com/v1/releases/?start_date=${sd}&end_date=${ed}&limit=250`, {headers:{"X-API-Key":key}});
+  if(r.status === 401) throw new Error("Watchmode didn't accept your key — check it in ⚙ Settings");
+  if(r.status === 429) throw new Error("Watchmode's monthly free quota is used up");
+  if(!r.ok) throw new Error("Watchmode → HTTP "+r.status);
+  const j = await r.json();
+  const rows = (j.releases||[]).filter(x => WM_SERVICES[x.source_id]);
+  // keep the cache small: last 10 days looked at
+  cache[dateStr] = {at:Date.now(), rows};
+  const keys = Object.keys(cache).sort((a,b)=> cache[b].at - cache[a].at).slice(0,10);
+  try{ localStorage.setItem(WM_CACHE, JSON.stringify(Object.fromEntries(keys.map(k=>[k,cache[k]])))); }catch(e){}
+  return rows;
+}
+function buildWatchmode(rows, dateStr){
+  const groups = new Map();
+  for(const x of rows||[]){
+    if(String(x.source_release_date||"").slice(0,10) !== dateStr) continue;
+    const key = "wm:"+x.id;
+    let g = groups.get(key);
+    const svc = WM_SERVICES[x.source_id];
+    if(!g){
+      const tvType = /tv/.test(x.type||"");
+      const label = {movie:"Movie", tv_series:"TV series", tv_miniseries:"Miniseries", tv_special:"TV special", short_film:"Short film", tv_movie:"TV movie"}[x.type] || (tvType ? "TV" : "Movie");
+      g = {key, kind:"wm", title:x.title, titles:[x.title], services:[], original: !!Number(x.is_original), image: safeUrl(x.poster_url),
+           imdb: /^tt\d+$/.test(x.imdb_id||"") ? x.imdb_id : "", tmdb: x.tmdb_id ? `${x.tmdb_type==="tv"?"tv":"movie"}/${Number(x.tmdb_id)}` : "",
+           epLabel: label + (x.season_number ? ` · Season ${Number(x.season_number)}` : ""), genres:[], category:"", region:"WM"};
+      g.link = g.imdb ? `https://www.imdb.com/title/${g.imdb}/` : (g.tmdb ? `https://www.themoviedb.org/${g.tmdb}` : "");
+      groups.set(key, g);
+    }
+    if(!g.services.includes(svc)) g.services.push(svc);
+    if(Number(x.is_original)) g.original = true;
+  }
+  return [...groups.values()].map(g => (g.channel = g.services.join(" · "), g));
+}
+
 // ---------- Normalize into cards ----------
 function buildTV(rows, dateStr){
   const groups = new Map();
@@ -408,7 +453,9 @@ const FILTER_LABELS = {kids:"Kids shows", dating:"Reality dating", talk:"Daytime
 
 function sections(){
   const q = norm($("#q").value).trim();
-  const vis = items.filter(g => !isHidden(g) && !filteredOut(g) && (!q || g.titles.some(t => norm(t).includes(q))));
+  const wmTitles = new Set(items.filter(g => g.kind==="wm").map(g => norm(g.title)));
+  const dupOfWm = g => g.kind==="tv" && g.region==="Streaming" && wmTitles.has(norm(g.title)) && !isWatching(g);   // already listed under "New on streaming"
+  const vis = items.filter(g => !isHidden(g) && !filteredOut(g) && !dupOfWm(g) && (!q || g.titles.some(t => norm(t).includes(q))));
   const used = new Set();
   const take = (fn) => { const r = vis.filter(g => !used.has(g.key) && fn(g)); r.forEach(g=>used.add(g.key)); return r; };
   const byTime = (a,b) => (a.time||0) - (b.time||0);
@@ -416,6 +463,9 @@ function sections(){
   out.push({id:"watching", title:"★ Shows you watch", sub:"Shows you've starred, plus matches from your library and favorites.", list: take(isWatching).sort(byTime)});
   out.push({id:"new", title:"New series", sub:"Series premieres (Season 1, Episode 1) — TV and anime.", list: take(g => g.isNewSeries).sort((a,b)=> (a.kind===b.kind?0:a.kind==="anime"?1:-1) || byTime(a,b))});
   out.push({id:"season", title:"Season premieres", sub:"Returning shows starting a new season.", list: take(g => g.isSeasonPremiere).sort(byTime)});
+  const byName = (a,b) => a.title.localeCompare(b.title);
+  out.push({id:"wmOrig", title:"New on streaming: Originals", sub:"Netflix, Disney+, Hulu, HBO Max, Peacock, Paramount+ and Apple TV+ originals released today (movies and TV). Data from Watchmode.", list: take(g => g.kind==="wm" && g.original).sort(byName)});
+  out.push({id:"wmCat", title:"New on streaming: Added to catalog", sub:"Movies and shows those services added to their catalog today. Data from Watchmode.", list: take(g => g.kind==="wm").sort(byName)});
   out.push({id:"animePicks", title:"Anime picked for you", sub:"Ranked by how well genres and tags match what's in your library (isekai, dark fantasy, action, fantasy comedy).", list: take(g => g.kind==="anime" && g.score >= MAYBE_MATCH).sort((a,b)=> b.score-a.score || byTime(a,b))});
   out.push({id:"streaming", title:"Streaming", list: take(g => g.region==="Streaming").sort(byTime)});
   out.push({id:"us", title:"US TV", list: take(g => g.region==="US").sort(byTime)});
@@ -438,7 +488,9 @@ function card(g){
   if(g.kidsLabel) chips.push(`<span class="chip kids">Kids</span>`);
   if(isSeeded(g)) chips.push(`<span class="chip lib">In your library / likes</span>`);
   if(g.channel) chips.push(`<span class="chip net">${esc(g.channel)}</span>`);
-  if(g.kind==="tv"){
+  if(g.kind==="wm"){
+    chips.push(`<span class="chip ${g.original?"new":"time"}">${g.original?"ORIGINAL":"Added to catalog"}</span>`);
+  } else if(g.kind==="tv"){
     if(g.streamDrop) chips.push(`<span class="chip time">Streaming drop</span>`);
     else if(g.time) chips.push(`<span class="chip time">${esc(fmtTime(g.time))}</span>`);
   } else {
@@ -449,7 +501,10 @@ function card(g){
   (g.genres||[]).slice(0,3).forEach(x => chips.push(`<span class="chip">${esc(x)}</span>`));
   if(g.kind==="anime") g.tags.filter(t => (TAG_W[t]||0) >= 2).slice(0,3).forEach(t => chips.push(`<span class="chip">${esc(t)}</span>`));
   const links = [];
-  if(g.kind==="anime"){
+  if(g.kind==="wm"){
+    if(g.imdb) links.push(`<a href="https://www.imdb.com/title/${esc(g.imdb)}/" target="_blank" rel="noopener">IMDb</a>`);
+    if(g.tmdb) links.push(`<a href="https://www.themoviedb.org/${esc(g.tmdb)}" target="_blank" rel="noopener">TMDB</a>`);
+  } else if(g.kind==="anime"){
     g.streams.forEach(s => links.push(`<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.site)}</a>`));
     if(g.link) links.push(`<a href="${esc(g.link)}" target="_blank" rel="noopener">AniList</a>`);
   } else {
@@ -502,12 +557,13 @@ async function loadDay(){
   $("#main").innerHTML = `<div class="status">Loading schedules for ${esc(dateStr)}…</div>`;
   const start = day.getTime(), end = start + 86400000;
   const errors = [];
-  const [tv, an] = await Promise.all([
+  const [tv, an, wm] = await Promise.all([
     fetchTVmaze(dateStr).catch(e => { errors.push("TVmaze: "+e.message); return []; }),
-    fetchAniList(start, end).catch(e => { errors.push(e.message.startsWith("AniList")?e.message:"AniList: "+e.message); return []; })
+    fetchAniList(start, end).catch(e => { errors.push(e.message.startsWith("AniList")?e.message:"AniList: "+e.message); return []; }),
+    fetchWatchmode(dateStr).catch(e => { errors.push(e.message); return null; })
   ]);
   if(tok !== loadToken) return;
-  items = [...buildTV(tv, dateStr), ...buildAnime(an)];
+  items = [...buildTV(tv, dateStr), ...buildAnime(an), ...buildWatchmode(wm, dateStr)];
   render();
   if(errors.length) $("#main").insertAdjacentHTML("afterbegin", `<div class="status err">Couldn't load part of the schedule — ${esc(errors.join(" | "))}. Try ↻ in a minute.</div>`);
 }
@@ -544,12 +600,18 @@ function openSettings(){
      2. Paste it here and press Connect. The token stays in this browser only.</div>
      <input type="password" id="tok" placeholder="ghp_…" autocomplete="off">
      <div style="margin-top:6px"><button class="primary" data-act="connect">Connect</button></div>`}
+   <h3>New on streaming (Watchmode)</h3>
+   ${wmKey() ? `<div class="sub" style="margin:0 0 8px">Connected. New movies and shows on Netflix, Disney+, Hulu, HBO Max, Peacock, Paramount+ and Apple TV+ appear in the "New on streaming" sections. Each day you look at uses about 1 request of your free monthly quota (results are reused for 6 hours).</div>
+     <button data-act="wmremove">Remove Watchmode key from this device</button>`
+   : `<div class="sub" style="margin:0 0 8px">Paste your free Watchmode API key to see what Netflix, Disney+, Hulu, HBO Max, Peacock, Paramount+ and Apple TV+ add each day. The key stays in this browser only (it isn't synced), so add it on each device.</div>
+     <input type="password" id="wmkey" placeholder="Watchmode API key" autocomplete="off">
+     <div style="margin-top:6px"><button class="primary" data-act="wmsave">Save key</button></div>`}
    <h3>Back up / move your settings</h3>
    <div class="sub" style="margin:0 0 6px">Your hidden and followed shows are saved in this browser. Copy this text to keep a backup or move it to another browser.</div>
    <textarea id="backup">${esc(JSON.stringify({hidden:S.hidden,watching:S.watching,unwatch:S.unwatch,filters:S.filters}))}</textarea>
    <div style="display:flex;gap:6px;margin-top:6px"><button data-act="copy">Copy</button><button data-act="import">Load from text above</button></div>
    <h3>About</h3>
-   <div class="sub" style="margin:0">Schedules from <a href="https://www.tvmaze.com" target="_blank">TVmaze</a> (TV and streaming) and <a href="https://anilist.co" target="_blank">AniList</a> (anime). Times are shown in your computer's time zone. Anime times are the Japanese broadcast; Crunchyroll/HIDIVE usually post within a few hours.</div>`;
+   <div class="sub" style="margin:0">Schedules from <a href="https://www.tvmaze.com" target="_blank">TVmaze</a> (TV and streaming) and <a href="https://anilist.co" target="_blank">AniList</a> (anime). New-on-streaming data from <a href="https://www.watchmode.com" target="_blank">Watchmode</a>. Times are shown in your computer's time zone. Anime times are the Japanese broadcast; Crunchyroll/HIDIVE usually post within a few hours.</div>`;
   $("#drawer").classList.add("on");
 }
 
@@ -599,6 +661,13 @@ document.addEventListener("click", e => {
   }
   if(btn && btn.dataset.act === "disconnect"){ SY = {}; saveSync(); setSync(""); openSettings(); toast("Sync turned off on this device (your gist is kept)"); return; }
   if(btn && btn.dataset.act === "syncnow"){ pull(); return; }
+  if(btn && btn.dataset.act === "wmsave"){
+    const k = ($("#wmkey").value||"").trim();
+    if(!/^[A-Za-z0-9]{20,80}$/.test(k)){ toast("That doesn't look like a Watchmode key"); return; }
+    try{ localStorage.setItem(WM_KEY_STORE, k); localStorage.removeItem(WM_CACHE); }catch(e){}
+    openSettings(); loadDay(); toast("Watchmode key saved"); return;
+  }
+  if(btn && btn.dataset.act === "wmremove"){ try{ localStorage.removeItem(WM_KEY_STORE); localStorage.removeItem(WM_CACHE); }catch(e){} openSettings(); loadDay(); toast("Watchmode key removed"); return; }
   if(btn && btn.dataset.act === "copy"){ const ta = $("#backup"); ta.select(); (navigator.clipboard ? navigator.clipboard.writeText(ta.value) : Promise.reject()).then(()=>toast("Copied")).catch(()=>{document.execCommand("copy"); toast("Copied");}); return; }
   if(btn && btn.dataset.act === "import"){
     try{ const j = JSON.parse($("#backup").value); S = merge(structuredClone(DEFAULTS), j); save(); render(); openSettings(); toast("Settings loaded"); }
