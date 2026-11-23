@@ -358,15 +358,16 @@ function buildWatchmode(rows, dateStr){
 // ---------- Remove duplicates across sources ----------
 // Anime: AniList wins over TVmaze listings of the same show.
 // New on streaming: if the show is already listed as TV or anime, keep that card and tag it with the service instead.
+const tkey = t => { const k = norm(t).trim(); return k.length >= 2 ? k : ""; };   // ignore titles with no Latin letters/digits
 function dedupe(list){
   const anime = new Map();
-  list.filter(g => g.kind==="anime").forEach(g => g.titles.filter(Boolean).forEach(t => anime.set(norm(t), g)));
-  let out = list.filter(g => !(g.kind==="tv" && g.titles.some(t => anime.has(norm(t)))));
+  list.filter(g => g.kind==="anime").forEach(g => g.titles.map(tkey).filter(Boolean).forEach(k => anime.set(k, g)));
+  let out = list.filter(g => !(g.kind==="tv" && g.titles.map(tkey).some(k => k && anime.has(k))));
   const shows = new Map();
-  out.filter(g => g.kind!=="wm").forEach(g => g.titles.filter(Boolean).forEach(t => { const k = norm(t); if(!shows.has(k)) shows.set(k, g); }));
+  out.filter(g => g.kind!=="wm").forEach(g => g.titles.map(tkey).filter(Boolean).forEach(k => { if(!shows.has(k)) shows.set(k, g); }));
   out = out.filter(g => {
     if(g.kind !== "wm") return true;
-    const m = shows.get(norm(g.title));
+    const m = tkey(g.title) && shows.get(tkey(g.title));
     if(!m) return true;
     m.alsoNew = m.alsoNew || {services:[], original:false};
     g.services.forEach(sv => { if(!m.alsoNew.services.includes(sv)) m.alsoNew.services.push(sv); });
