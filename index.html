@@ -355,6 +355,27 @@ function buildWatchmode(rows, dateStr){
   return [...groups.values()].map(g => (g.channel = g.services.join(" · "), g));
 }
 
+// ---------- Remove duplicates across sources ----------
+// Anime: AniList wins over TVmaze listings of the same show.
+// New on streaming: if the show is already listed as TV or anime, keep that card and tag it with the service instead.
+function dedupe(list){
+  const anime = new Map();
+  list.filter(g => g.kind==="anime").forEach(g => g.titles.filter(Boolean).forEach(t => anime.set(norm(t), g)));
+  let out = list.filter(g => !(g.kind==="tv" && g.titles.some(t => anime.has(norm(t)))));
+  const shows = new Map();
+  out.filter(g => g.kind!=="wm").forEach(g => g.titles.filter(Boolean).forEach(t => { const k = norm(t); if(!shows.has(k)) shows.set(k, g); }));
+  out = out.filter(g => {
+    if(g.kind !== "wm") return true;
+    const m = shows.get(norm(g.title));
+    if(!m) return true;
+    m.alsoNew = m.alsoNew || {services:[], original:false};
+    g.services.forEach(sv => { if(!m.alsoNew.services.includes(sv)) m.alsoNew.services.push(sv); });
+    m.alsoNew.original = m.alsoNew.original || g.original;
+    return false;
+  });
+  return out;
+}
+
 // ---------- Normalize into cards ----------
 function buildTV(rows, dateStr){
   const groups = new Map();
@@ -473,9 +494,7 @@ const FILTER_LABELS = {kids:"Kids shows", dating:"Reality dating", talk:"Daytime
 
 function sections(){
   const q = norm($("#q").value).trim();
-  const wmTitles = new Set(items.filter(g => g.kind==="wm").map(g => norm(g.title)));
-  const dupOfWm = g => g.kind==="tv" && g.region==="Streaming" && wmTitles.has(norm(g.title)) && !isWatching(g);   // already listed under "New on streaming"
-  const vis = items.filter(g => !isHidden(g) && !filteredOut(g) && !dupOfWm(g) && (!q || g.titles.some(t => norm(t).includes(q))));
+  const vis = items.filter(g => !isHidden(g) && !filteredOut(g) && (!q || g.titles.some(t => norm(t).includes(q))));
   const used = new Set();
   const take = (fn) => { const r = vis.filter(g => !used.has(g.key) && fn(g)); r.forEach(g=>used.add(g.key)); return r; };
   const byTime = (a,b) => (a.time||0) - (b.time||0);
@@ -505,6 +524,7 @@ function card(g){
   if(g.isSeasonPremiere) chips.push(`<span class="chip prem">SEASON PREMIERE</span>`);
   if(g.kind==="anime" && g.score >= STRONG_MATCH) chips.push(`<span class="chip match">Great match</span>`);
   else if(g.kind==="anime" && g.score >= MAYBE_MATCH) chips.push(`<span class="chip match">Possible match</span>`);
+  if(g.alsoNew) chips.push(`<span class="chip ${g.alsoNew.original?"new":"prem"}">${g.alsoNew.original?"Original":"New"} on ${esc(g.alsoNew.services.join(" · "))}</span>`);
   if(g.kidsLabel) chips.push(`<span class="chip kids">Kids</span>`);
   if(isSeeded(g)) chips.push(`<span class="chip lib">In your library / likes</span>`);
   if(g.channel) chips.push(`<span class="chip net">${esc(g.channel)}</span>`);
@@ -585,6 +605,7 @@ async function loadDay(){
   const nr = nd ? newRowsForDay(nd, dateStr) : {motn:[], wm:[]};
   if(tok !== loadToken) return;
   items = [...buildTV(tv, dateStr), ...buildAnime(an), ...addMotn(buildWatchmode(nr.wm, dateStr), nr.motn)];
+  items = dedupe(items);
   render();
   if(errors.length) $("#main").insertAdjacentHTML("afterbegin", `<div class="status err">Couldn't load part of the schedule — ${esc(errors.join(" | "))}. Try ↻ in a minute.</div>`);
 }
