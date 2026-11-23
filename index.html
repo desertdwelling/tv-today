@@ -324,7 +324,9 @@ async function loadNewData(force){
   return (NEWDATA = await r.json());
 }
 function newRowsForDay(d, dateStr){
-  const motn = (d.motn||[]).filter(x => ymd(new Date(x.ts*1000)) === dateStr);
+  // "Today" shows everything added in the last 24 hours; other days show that calendar day
+  const isToday = dateStr === ymd(new Date()), since = Date.now()/1000 - 86400;
+  const motn = (d.motn||[]).filter(x => isToday ? x.ts >= since : ymd(new Date(x.ts*1000)) === dateStr);
   const wm = (d.watchmode||[]).filter(x => String(x.source_release_date||"").slice(0,10) === dateStr);
   return {motn, wm};
 }
@@ -483,7 +485,7 @@ function sections(){
   out.push({id:"season", title:"Season premieres", sub:"Returning shows starting a new season.", list: take(g => g.isSeasonPremiere).sort(byTime)});
   const byName = (a,b) => a.title.localeCompare(b.title);
   out.push({id:"wmOrig", title:"New on streaming: Originals", sub:"Netflix, Disney+, Hulu, HBO Max, Peacock, Paramount+ and Apple TV+ originals released today (movies and TV). Data from Watchmode.", list: take(g => g.kind==="wm" && g.original).sort(byName)});
-  out.push({id:"wmCat", title:"New on streaming: Added to catalog", sub:"Movies and shows those services added to their catalog today. Data from Watchmode and the Streaming Availability API.", list: take(g => g.kind==="wm").sort(byName)});
+  out.push({id:"wmCat", title:"New on streaming: Added to catalog", sub:(ymd(day)===ymd(new Date()) ? "Movies and shows those services added in the last 24 hours." : "Movies and shows those services added to their catalog that day.") + " Data from Watchmode and the Streaming Availability API.", list: take(g => g.kind==="wm").sort(byName)});
   out.push({id:"animePicks", title:"Anime picked for you", sub:"Ranked by how well genres and tags match what's in your library (isekai, dark fantasy, action, fantasy comedy).", list: take(g => g.kind==="anime" && g.score >= MAYBE_MATCH).sort((a,b)=> b.score-a.score || byTime(a,b))});
   out.push({id:"streaming", title:"Streaming", list: take(g => g.region==="Streaming").sort(byTime)});
   out.push({id:"us", title:"US TV", list: take(g => g.region==="US").sort(byTime)});
@@ -631,7 +633,7 @@ function openSettings(){
   loadNewData(true).then(d => {
     const el = $("#newstatus"); if(!el) return;
     el.innerHTML = d.updated
-      ? `Data last updated ${esc(new Date(d.updated*1000).toLocaleString([], {weekday:"short", hour:"numeric", minute:"2-digit"}))}. It updates every 6 hours on GitHub, so opening this page never uses your API quota.<br><small>${esc((d.log||[])[0]||"")}</small>`
+      ? `Data last updated ${esc(new Date(d.updated*1000).toLocaleString([], {weekday:"short", hour:"numeric", minute:"2-digit"}))}. It updates every 12 hours on GitHub, so opening this page never uses your API quota.<br><small>${esc((d.log||[])[0]||"")}</small>`
       : "No data yet — the GitHub job hasn't run yet.";
   }).catch(e => { const el = $("#newstatus"); if(el) el.textContent = "Couldn't read the data file: " + e.message; });
 }

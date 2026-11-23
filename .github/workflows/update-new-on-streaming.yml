@@ -2,7 +2,7 @@ name: Update new-on-streaming data
 
 on:
   schedule:
-    - cron: "17 */6 * * *"   # every 6 hours (UTC)
+    - cron: "17 0,12 * * *"  # every 12 hours: 5:17 AM and 5:17 PM Arizona time
   workflow_dispatch:          # lets you run it by hand from the Actions tab
 
 permissions:
